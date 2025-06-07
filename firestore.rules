@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Staff profiles can be read by anyone.
+    // Staff profiles can be created/updated by Cloud Functions (no auth context) or by authenticated users
+    match /staff/{staffId} {
+      allow read: if true;
+      allow write: if request.auth == null; // Allow Cloud Functions to write
+      allow write: if request.auth.uid == staffId; // Allow authenticated users to update their own profile
+    }
+    
+    // Tips can be created by anyone (including Cloud Functions).
+    // A user can only read their own tips if authenticated.
+    match /tips/{tipId} {
+      allow create: if true;
+      allow read: if request.auth != null && request.auth.uid == resource.data.staffId;
+      allow read: if request.auth == null; // Allow Cloud Functions to read tips
+    }
+
+    // Fallback rule to deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 
