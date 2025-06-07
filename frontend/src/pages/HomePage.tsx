@@ -24,34 +24,29 @@ const RoadmapItem = ({
   title, 
   description, 
   status, 
-  index 
 }: { 
   icon: any; 
   title: string; 
   description: string; 
-  status: 'coming-soon' | 'in-development'; 
-  index: number;
+  status: 'coming-soon' | 'in-development' | 'new';
 }) => {
   return (
-    <div className="relative">
-      {/* Connection Line */}
-      {index < 3 && (
-        <div className="hidden lg:block absolute top-16 left-1/2 w-full h-0.5 bg-gradient-to-r from-indigo-500 to-transparent z-0"></div>
-      )}
-      
-      <div className="relative bg-gray-800 rounded-2xl p-8 hover:bg-gray-750 transition-all duration-300 transform hover:scale-105 z-10">
-        <div className="flex flex-col items-center text-center">
+    <div className="relative flex flex-col">
+      <div className="flex-grow bg-gray-800 rounded-2xl p-8 hover:bg-gray-750 transition-all duration-300 transform hover:scale-105 z-10">
+        <div className="flex flex-col items-center text-center h-full">
           <div className="w-16 h-16 bg-indigo-600 rounded-xl flex items-center justify-center mb-4">
             <Icon size={32} className="text-white" />
           </div>
           <h3 className="text-xl font-bold text-white mb-3">{title}</h3>
-          <p className="text-gray-300 text-sm leading-relaxed mb-4">{description}</p>
+          <p className="text-gray-300 text-sm leading-relaxed mb-4 flex-grow">{description}</p>
           <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
             status === 'coming-soon' 
               ? 'bg-yellow-500/20 text-yellow-400' 
-              : 'bg-blue-500/20 text-blue-400'
+              : status === 'in-development'
+              ? 'bg-blue-500/20 text-blue-400'
+              : 'bg-green-500/20 text-green-400'
           }`}>
-            {status === 'coming-soon' ? 'Coming Soon' : 'In Development'}
+            {status === 'coming-soon' ? 'Coming Soon' : status === 'in-development' ? 'In Development' : 'New'}
           </div>
         </div>
       </div>
@@ -132,37 +127,45 @@ const HomePage: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid lg:grid-cols-4 gap-8 max-w-6xl mx-auto">
+        <div className="grid lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
           <RoadmapItem
             icon={Mail}
             title="Gmail Authentication"
-            description="Sign in with your Google account and we'll automatically generate a secure crypto wallet for you, complete with a recovery phrase for ultimate security."
+            description="Sign in with your Google account and we'll automatically generate a secure crypto wallet for you."
             status="coming-soon"
-            index={0}
           />
           
           <RoadmapItem
             icon={Wallet}
             title="Wallet Management"
-            description="Withdraw your tips to any address, view your generated wallet's private key or recovery phrase, and manage your crypto assets with ease."
+            description="Withdraw your tips to any address and manage your crypto assets with ease."
             status="coming-soon"
-            index={1}
           />
           
           <RoadmapItem
             icon={Building}
             title="Restaurant Accounts"
-            description="Comprehensive restaurant management with branded QR codes, staff reports, automatic tip distribution, and team analytics for business owners."
+            description="Comprehensive restaurant management with branded QR codes, staff reports, and automatic tip distribution."
             status="in-development"
-            index={2}
           />
           
           <RoadmapItem
             icon={CreditCard}
             title="Card Payments"
-            description="Accept traditional credit card payments alongside crypto, making it easier for all customers to show their appreciation regardless of their payment preference."
+            description="Accept traditional credit card payments alongside crypto, making it easier for all customers."
             status="coming-soon"
-            index={3}
+          />
+          <RoadmapItem
+            icon={Users}
+            title="Group Tipping"
+            description="Allow multiple customers to contribute to a single tip pool for a staff member or an entire team."
+            status="new"
+          />
+          <RoadmapItem
+            icon={Zap}
+            title="Staff Internal-Chat"
+            description="A dedicated chat for restaurant employees to communicate and coordinate effectively within the app."
+            status="new"
           />
         </div>
 
