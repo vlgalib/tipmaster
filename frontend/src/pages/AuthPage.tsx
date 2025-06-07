@@ -159,25 +159,25 @@ const AuthPage: React.FC = () => {
       const result = await registerStaff(registrationData);
       console.log('✅ Registration API response:', result);
 
-      // Wait a bit for database to update
-      console.log('⏳ Waiting for database to update...');
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds
-
-      // Verify the user was actually saved with retry logic
+      // Verify the user was actually saved with robust retry logic
       console.log('🔍 Verifying user was saved...');
+      const maxAttempts = 4;
       let verificationAttempts = 0;
-      const maxAttempts = 3;
       
       while (verificationAttempts < maxAttempts) {
         try {
+          // Add a delay before the first attempt and between retries
+          const delay = (verificationAttempts + 1) * 3000; // 3s, 6s, 9s, 12s
+          console.log(`⏳ Waiting for ${delay / 1000}s before verification attempt ${verificationAttempts + 1}...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+
           const savedUser = await getStaff(address.toLowerCase());
           console.log(`✅ User verification successful (attempt ${verificationAttempts + 1}):`, savedUser);
           
           if (!savedUser || !savedUser.name || !savedUser.photoUrl) {
-            throw new Error('User data was not saved correctly to database');
+            throw new Error('User data was not saved correctly to the database.');
           }
           
-          // Navigate to dashboard
           console.log('✅ Registration completed successfully, navigating to dashboard');
           navigate('/dashboard');
           return; // Exit the function successfully
@@ -186,11 +186,8 @@ const AuthPage: React.FC = () => {
           verificationAttempts++;
           console.error(`❌ User verification failed (attempt ${verificationAttempts}):`, verificationError);
           
-          if (verificationAttempts < maxAttempts) {
-            console.log(`⏳ Retrying verification in 2 seconds...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          } else {
-            throw new Error('Registration completed but user data could not be verified after multiple attempts. Please try refreshing the page.');
+          if (verificationAttempts >= maxAttempts) {
+             throw new Error('Registration completed, but we could not verify your data immediately. Please refresh the page to log in.');
           }
         }
       }
