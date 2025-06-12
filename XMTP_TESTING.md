@@ -15,7 +15,7 @@ npm run build
 cd ..
 firebase deploy --only hosting
 ```
-Test at: https://tips-6545c.web.app/xmtp-debug
+Test at: https://tipmaster.xyz/xmtp-debug
 
 ### 2. Preview Mode
 ```bash

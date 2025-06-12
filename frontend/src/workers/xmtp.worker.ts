@@ -15,7 +15,8 @@ const isFirebaseEnvironment = () => {
   if (typeof self !== 'undefined') {
     return self.location?.hostname?.includes('.web.app') || 
            self.location?.hostname?.includes('.firebaseapp.com') ||
-           self.location?.hostname?.includes('firebase');
+           self.location?.hostname?.includes('firebase') ||
+           self.location?.hostname === 'tipmaster.xyz';
   }
   return false;
 };

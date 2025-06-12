@@ -3,7 +3,7 @@
 ## Access to Debug Page
 
 1. **Locally**: http://localhost:5173/xmtp-debug
-2. **Production**: https://tips-6545c.web.app/xmtp-debug
+2. **Production**: https://tipmaster.xyz/xmtp-debug
 
 ## Functionality
 

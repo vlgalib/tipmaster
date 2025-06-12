@@ -2,6 +2,8 @@
 
 A modern cryptocurrency tipping platform built with **Coinbase OnchainKit**, **XMTP Protocol**, and **Base network**. TipMaster demonstrates the power of Coinbase's Web3 infrastructure for seamless browser-based crypto applications.
 
+🌐 **Live Demo**: [https://tipmaster.xyz](https://tipmaster.xyz)
+
 ## 🌟 Key Features
 
 - **🔐 Coinbase Wallet Integration**: Native support for Coinbase Wallet with OnchainKit components
@@ -158,7 +160,7 @@ TipMaster/
 
 1. **Clone and Install**
 ```bash
-git clone https://github.com/your-username/tipmaster.git
+git clone https://github.com/vlgalib/tipmaster.git
 cd tipmaster
 cd frontend && npm install
 cd ../functions && npm install

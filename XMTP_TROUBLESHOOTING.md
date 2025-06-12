@@ -221,7 +221,7 @@ If issues persist, consider:
 ## 📊 Current Status (12.06.2025)
 
 ✅ **Works:**
-- Application deployed: https://tips-6545c.web.app/xmtp-debug
+- Application deployed: https://tipmaster.xyz/xmtp-debug
 - Polyfill issues fixed for production  
 - XMTP modules imported successfully
 - Proper error reporting implemented
@@ -253,7 +253,7 @@ If issues persist, consider:
 ## 🔍 Debugging
 
 Check XMTP status:
-- Open https://tips-6545c.web.app/xmtp-debug
+- Open https://tipmaster.xyz/xmtp-debug
 - Check console logs
 - Connection time is logged with details
 
@@ -308,7 +308,7 @@ npm run dev
 
 ### Option 1: Local Test with console commands
 ```javascript
-// On browser https://tips-6545c.web.app/xmtp-debug
+// On browser https://tipmaster.xyz/xmtp-debug
 // Open DevTools Console and execute:
 
 // 1. Connect wallet
@@ -346,7 +346,7 @@ console.log('XMTP client created:', client);
 
 ## Useful Information
 
-- **Production URL**: https://tips-6545c.web.app/xmtp-debug
+- **Production URL**: https://tipmaster.xyz/xmtp-debug
 - **XMTP Version**: @xmtp/browser-sdk v2.1.1
 - **Goal**: connect to XMTP V3 network for tipping notifications
 

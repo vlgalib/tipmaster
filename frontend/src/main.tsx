@@ -40,8 +40,15 @@ try {
 // Override SES to prevent XMTP blocking
 const originalConsoleWarn = console.warn;
 console.warn = (...args) => {
-  // Suppress SES deprecated warnings
-  if (args[0]?.includes?.('SES') || args[0]?.includes?.('dateTaming') || args[0]?.includes?.('mathTaming')) {
+  const message = args[0]?.toString?.() || '';
+  // Suppress SES deprecated warnings and lockdown warnings
+  if (message.includes('SES') || 
+      message.includes('dateTaming') || 
+      message.includes('mathTaming') ||
+      message.includes('lockdown-install') ||
+      message.includes('deprecated and does nothing') ||
+      message.includes('Removing unpermitted intrinsics') ||
+      message.includes('toTemporalInstant')) {
     return;
   }
   originalConsoleWarn.apply(console, args);

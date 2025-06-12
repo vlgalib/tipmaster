@@ -773,9 +773,29 @@ const DashboardPage: React.FC = () => {
                     src={staffData.photoUrl} 
                     alt={staffData.name} 
                     className="w-12 h-12 rounded-full border-2 border-border object-cover"
-                    onError={(e) => {
-                      e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(staffData.name)}&background=random`;
-                    }}
+                                      onError={(e) => {
+                    // Create a simple colored avatar with initials instead of external API
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 100;
+                    canvas.height = 100;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                      // Generate color from name
+                      const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+                      const colorIndex = staffData.name.charCodeAt(0) % colors.length;
+                      ctx.fillStyle = colors[colorIndex];
+                      ctx.fillRect(0, 0, 100, 100);
+                      
+                      // Add initials
+                      ctx.fillStyle = 'white';
+                      ctx.font = 'bold 40px Arial';
+                      ctx.textAlign = 'center';
+                      ctx.textBaseline = 'middle';
+                      const initials = staffData.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+                      ctx.fillText(initials, 50, 50);
+                    }
+                    e.currentTarget.src = canvas.toDataURL();
+                  }}
                     crossOrigin="anonymous"
                     referrerPolicy="no-referrer"
                   />

@@ -22,7 +22,7 @@ Thank you for your interest in contributing to TipMaster! This guide focuses on 
 
 2. **OnchainKit Development**
 ```bash
-git clone https://github.com/your-username/tipmaster.git
+git clone https://github.com/vlgalib/tipmaster.git
 cd tipmaster/frontend
 npm install
 # OnchainKit components are pre-configured
