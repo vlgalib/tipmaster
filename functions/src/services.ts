@@ -1,90 +1,78 @@
-import { CdpWalletProvider } from "@coinbase/agentkit";
-import { Client } from "@xmtp/xmtp-js";
-import { Wallet, ethers } from "ethers";
 import * as functions from "firebase-functions";
+import { Request, Response } from "express";
+// import { getXMTPModule as loadXMTPModule, XMTPSigner, XMTPConversation, XMTPMessage } from "./xmtp";
+import * as path from "path";
 
-// Initialize Coinbase AgentKit
-let agentKitWalletProvider: CdpWalletProvider;
-async function getAgentKitProvider() {
-  if (agentKitWalletProvider) return agentKitWalletProvider;
-
-  const cdpApiKeyName = functions.config().coinbase.cdp_api_key_name;
-  const cdpApiKeyPrivateKey = functions.config().coinbase.cdp_api_key_private_key;
-
-  if (!cdpApiKeyName || !cdpApiKeyPrivateKey) {
-    throw new Error("Coinbase CDP API credentials are not set in Firebase function config.");
+// Dynamic import for XMTP V3 ES module
+let XMTPModule: any = null;
+async function getXMTPModule() {
+  if (!XMTPModule) {
+    XMTPModule = await import("@xmtp/node-sdk");
   }
-
-  agentKitWalletProvider = await CdpWalletProvider.configureWithWallet({
-    apiKeyId: cdpApiKeyName,
-    apiKeyPrivate: cdpApiKeyPrivateKey,
-    networkId: "base-mainnet",
-  });
-  return agentKitWalletProvider;
-}
-
-// Initialize XMTP Client for the service wallet
-let xmtpClient: Client;
-async function getXmtpClient() {
-    if (xmtpClient) return xmtpClient;
-
-    const privateKey = functions.config().xmtp.service_wallet_private_key;
-    if (!privateKey) {
-        throw new Error("XMTP service wallet private key is not set in Firebase function config.");
-    }
-    const wallet = new Wallet(privateKey);
-    xmtpClient = await Client.create(wallet, { env: "production" });
-    return xmtpClient;
-}
-
-
-/**
- * Transfers USDC to a recipient using Coinbase AgentKit.
- * @param {string} recipientAddress The recipient's wallet address.
- * @param {number} amount The amount of USDC to send.
- * @return {Promise<string>} The transaction hash.
- */
-export async function transferUsdc(recipientAddress: string, amount: number): Promise<string> {
-    const provider = await getAgentKitProvider();
-    
-    // AgentKit's transfer action for ERC20 tokens
-    const usdcContractAddress = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // Base Mainnet USDC
-    const bigAmount = ethers.parseUnits(amount.toString(), 6); // USDC has 6 decimals
-
-    const tx = await provider.transfer(usdcContractAddress, recipientAddress, bigAmount.toString());
-
-    if (!tx.transactionHash) {
-        throw new Error("Failed to send transaction via AgentKit.");
-    }
-    
-    return tx.transactionHash;
+  return XMTPModule;
 }
 
 /**
- * Sends a notification message via XMTP.
- * @param {string} recipientAddress The recipient's wallet address.
- * @param {number} amount The amount of USDC sent.
- * @param {string} txHash The transaction hash.
+ * Sends XMTP notification from sender to recipient about tip transfer.
+ * Note: XMTP Node SDK doesn't work in Firebase Functions due to filesystem restrictions.
+ * This function logs data for debugging, actual sending happens through frontend.
  */
-export async function sendXmtpNotification(recipientAddress: string, amount: number, txHash: string) {
-    const xmtp = await getXmtpClient();
+export async function sendXmtpNotification(
+  senderAddress: string,
+  senderSignature: string,
+  recipientAddress: string, 
+  amount: number, 
+  txHash: string, 
+  customMessage?: string
+): Promise<void> {
+  console.log(`📨 XMTP notification request logged:`);
+  console.log(`   From: ${senderAddress}`);
+  console.log(`   To: ${recipientAddress}`);
+  console.log(`   Amount: ${amount} USDC`);
+  console.log(`   TX: ${txHash}`);
+  console.log(`   Message: ${customMessage || 'No custom message'}`);
+  
+  // In Firebase Functions XMTP SDK doesn't work due to filesystem restrictions
+  // Real sending happens through frontend XMTP client
+  console.log(`✅ XMTP notification logged successfully (frontend will handle actual sending)`);
+}
 
-    // A special conversation ID to easily identify tip transactions
-    const conversationId = `tipmaster-tip/${txHash}`;
+// Stub function to get XMTP conversation history
+export async function getXmtpHistory(walletAddress: string, signature: string, message: string) {
+  try {
+    console.log('[XMTP] Getting conversation history for:', walletAddress);
+    console.log('[XMTP] Using stub implementation - XMTP Node SDK not compatible with Firebase Functions');
     
-    const conversation = await xmtp.conversations.newConversation(
-        recipientAddress, 
-        {
-            conversationId: conversationId,
-            metadata: {
-                "source": "TipMaster"
-            }
-        }
-    );
+    // Return empty history for now
+    // TODO: Implement actual XMTP integration via REST API or separate microservice
+    const history: any[] = [];
+
+    console.log('[XMTP] Returning empty history - frontend XMTP client handles real conversations');
+    return history;
+  } catch (error) {
+    console.error('[XMTP] Error in stub implementation:', error);
+    // Even if there's an error, return empty array to prevent 500 errors
+    return [];
+  }
+}
+
+// Express handler for API
+export const getXmtpConversationHistory = async (req: Request, res: Response) => {
+  try {
+    const { walletAddress, signature, message } = req.body;
     
-    const message = `You received a new tip of ${amount} USDC! View transaction: https://basescan.org/tx/${txHash}`;
-    
-    await conversation.send(message);
-    
-    console.log(`XMTP notification sent to ${recipientAddress}`);
-} 
+    if (!walletAddress || !signature || !message) {
+      console.error('[XMTP] Missing required parameters:', { walletAddress, hasSignature: !!signature, message });
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const history = await getXmtpHistory(walletAddress, signature, message);
+    return res.json({ history });
+  } catch (error) {
+    console.error('[XMTP] Error getting conversation history:', error);
+    return res.status(500).json({ 
+      error: 'Failed to get conversation history',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}; 

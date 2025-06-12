@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XMTP V3 Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .log { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { color: red; }
+        .success { color: green; }
+        button { padding: 10px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>XMTP V3 Simple Test</h1>
+    <p>This page tests XMTP without the main app to isolate SES issues.</p>
+    
+    <button onclick="testXMTP()">Test XMTP V3 Connection</button>
+    <button onclick="clearLogs()">Clear Logs</button>
+    
+    <div id="logs"></div>
+
+    <script type="module">
+        window.log = function(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const div = document.createElement('div');
+            div.className = `log ${type}`;
+            div.textContent = `${new Date().toISOString()}: ${message}`;
+            logs.appendChild(div);
+            console.log(message);
+        };
+
+        window.clearLogs = function() {
+            document.getElementById('logs').innerHTML = '';
+        };
+
+        window.testXMTP = async function() {
+            try {
+                log('🔍 Starting XMTP V3 test...');
+                
+                // Check if MetaMask SES is present
+                if (typeof globalThis.lockdown !== 'undefined') {
+                    log('⚠️ MetaMask SES lockdown detected!', 'error');
+                } else {
+                    log('✅ No SES lockdown detected');
+                }
+
+                // Try to import XMTP
+                log('📦 Importing XMTP V3 browser SDK...');
+                const { Client } = await import('/node_modules/@xmtp/browser-sdk/dist/index.js');
+                log('✅ XMTP V3 module imported successfully', 'success');
+
+                // Check if we can create a client (would need a real signer for full test)
+                log('🔧 XMTP V3 module is available and ready', 'success');
+                
+            } catch (error) {
+                log(`❌ XMTP V3 test failed: ${error.message}`, 'error');
+                log(`Stack: ${error.stack}`, 'error');
+            }
+        };
+
+        // Auto-run test on load
+        window.addEventListener('load', () => {
+            log('📄 Test page loaded');
+            testXMTP();
+        });
+    </script>
+</body>
+</html> 

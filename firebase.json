@@ -6,13 +6,17 @@
   "functions": {
     "source": "functions"
   },
-  "hosting": {
+  "hosting": [
+    {
+      "target": "app",
     "public": "frontend/dist",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ],
+    "cleanUrls": true,
+    "trailingSlash": false,
     "headers": [
       {
         "source": "/api/**",
@@ -20,6 +24,31 @@
           {
             "key": "Cache-Control",
             "value": "private, no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cross-Origin-Embedder-Policy",
+            "value": "unsafe-none"
+          },
+          {
+            "key": "Cross-Origin-Opener-Policy", 
+            "value": "same-origin-allow-popups"
+          },
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "https://*.xmtp.network"
+          },
+          {
+            "key": "Access-Control-Allow-Methods",
+            "value": "GET, POST, OPTIONS"
+          },
+          {
+            "key": "Access-Control-Allow-Headers",
+            "value": "Content-Type, Authorization"
           }
         ]
       }
@@ -34,12 +63,12 @@
         "function": "getStaff"
       },
       {
-        "source": "/api/sendTip",
-        "function": "sendTip"
+          "source": "/api/notifyTip",
+          "function": "notifyTip"
       },
       {
-        "source": "/api/getHistory",
-        "function": "getHistory"
+          "source": "/api/getXmtpHistory",
+          "function": "getXmtpHistory"
       },
       {
         "source": "**",
@@ -47,6 +76,16 @@
       }
     ]
   },
+    {
+      "target": "sandbox",
+      "public": "sandbox",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ]
+    }
+  ],
   "storage": {
     "rules": "storage.rules"
   }

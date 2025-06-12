@@ -13,6 +13,18 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
     <meta name="theme-color" content="#0D111C" />
+
+    <!-- Global polyfills for XMTP SDK -->
+    <script>
+      // Ensure globalThis is available
+      if (typeof globalThis === 'undefined') {
+        window.globalThis = window;
+      }
+      // Ensure global is available for Node.js modules
+      if (typeof global === 'undefined') {
+        window.global = window;
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

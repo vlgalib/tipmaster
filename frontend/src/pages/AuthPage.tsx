@@ -1,45 +1,134 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAccount, useDisconnect, useConnect } from 'wagmi';
-import { User, MessageSquare, CheckCircle, LogOut, Wallet } from 'lucide-react';
+import { User, ArrowLeft } from 'lucide-react';
 import { registerStaff, getStaff } from '../services/api';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import AlertModal from '../components/AlertModal';
+import SafeWalletComponents from '../components/SafeWalletComponents';
 
 const AuthPage: React.FC = () => {
   const navigate = useNavigate();
-  const { address, isConnected } = useAccount();
-  const { disconnect } = useDisconnect();
-  const { connect, connectors } = useConnect();
+  
   const [name, setName] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [isXmtpActive, setIsXmtpActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const [checkingExistingUser, setCheckingExistingUser] = useState(false);
   const [alertInfo, setAlertInfo] = useState<{ show: boolean, message: string }>({ show: false, message: '' });
 
-  // Check if user already exists when wallet is connected
+  // Check for existing user when wallet address changes
   useEffect(() => {
-    if (isConnected && address) {
+    const checkExistingUser = async (address: string) => {
       setCheckingExistingUser(true);
-      getStaff(address)
-        .then(staff => {
-          if (staff) {
-            // User already exists, redirect to dashboard
-            navigate('/dashboard');
-          }
-        })
-        .catch(() => {
-          // User doesn't exist, stay on auth page
-          console.log('User not found, showing registration form');
-        })
-        .finally(() => {
-          setCheckingExistingUser(false);
-        });
+      try {
+        console.log(`[Auth] Checking if user exists for address: ${address}`);
+        const staff = await getStaff(address);
+        if (staff && staff.walletAddress) {
+          console.log('✅ Existing user found:', staff);
+          navigate('/dashboard', { state: { newStaffProfile: staff } });
+          return;
+        }
+      } catch (error) {
+        console.log('✅ New user, showing registration form');
+      } finally {
+        setCheckingExistingUser(false);
+      }
+    };
+
+    if (currentWalletAddress) {
+      checkExistingUser(currentWalletAddress);
     }
-  }, [isConnected, address, navigate]);
+  }, [currentWalletAddress, navigate]);
+
+  // Enhanced wallet connection monitoring
+  useEffect(() => {
+    const checkWalletConnection = async () => {
+      // Check multiple wallet providers
+      let address = null;
+      
+      // Check window.ethereum (MetaMask, injected wallets)
+      if (window.ethereum) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+          if (accounts.length > 0) {
+            address = accounts[0].toLowerCase();
+            console.log('[Auth] Found wallet via window.ethereum:', address);
+          }
+        } catch (error) {
+          console.warn('[Auth] Error checking window.ethereum:', error);
+        }
+      }
+      
+      // Check for Coinbase Wallet SDK
+      if (!address && window.coinbaseWalletExtension) {
+        try {
+          const accounts = await window.coinbaseWalletExtension.request({ method: 'eth_accounts' }) as string[];
+          if (accounts && accounts.length > 0) {
+            address = accounts[0].toLowerCase();
+            console.log('[Auth] Found wallet via Coinbase extension:', address);
+          }
+        } catch (error) {
+          console.warn('[Auth] Error checking Coinbase extension:', error);
+        }
+      }
+      
+      // Check for any other wallet providers
+      if (!address && window.web3) {
+        try {
+          const accounts = await window.web3.eth.getAccounts();
+          if (accounts && accounts.length > 0) {
+            address = accounts[0].toLowerCase();
+            console.log('[Auth] Found wallet via web3:', address);
+          }
+        } catch (error) {
+          console.warn('[Auth] Error checking web3:', error);
+        }
+      }
+      
+      if (address) {
+        setCurrentWalletAddress(address);
+      }
+    };
+
+    checkWalletConnection();
+    
+    // Listen for account changes on multiple providers
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (accounts.length > 0) {
+        const address = accounts[0].toLowerCase();
+        console.log(`[Auth] Wallet changed to: ${address}`);
+        setCurrentWalletAddress(address);
+      } else {
+        console.log('[Auth] Wallet disconnected');
+        setCurrentWalletAddress(null);
+      }
+    };
+    
+    // Set up listeners for different wallet types
+    if (window.ethereum) {
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+    }
+    
+    if (window.coinbaseWalletExtension) {
+      window.coinbaseWalletExtension.on('accountsChanged', handleAccountsChanged);
+    }
+    
+    // Periodic check for wallet connection (for smart wallets that might not emit events)
+    const intervalId = setInterval(checkWalletConnection, 2000);
+    
+    return () => {
+      // Cleanup listeners
+      if (window.ethereum) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      }
+      if (window.coinbaseWalletExtension) {
+        window.coinbaseWalletExtension.removeListener('accountsChanged', handleAccountsChanged);
+      }
+      clearInterval(intervalId);
+    };
+  }, []);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -88,23 +177,6 @@ const AuthPage: React.FC = () => {
     }
   };
 
-  // Placeholder for XMTP activation
-  const activateXmtp = useCallback(async () => {
-    if (!address) return;
-    console.log('Activating XMTP for', address);
-    // In a real app, you would initialize the XMTP client here
-    // const xmtp = await Client.create(signer);
-    setIsXmtpActive(true);
-    console.log('XMTP activated');
-  }, [address]);
-
-  // Automatically activate XMTP after wallet connection
-  React.useEffect(() => {
-    if (isConnected && !isXmtpActive && !checkingExistingUser) {
-      activateXmtp();
-    }
-  }, [isConnected, isXmtpActive, activateXmtp, checkingExistingUser]);
-
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -119,13 +191,8 @@ const AuthPage: React.FC = () => {
       return;
     }
     
-    if (!address) {
+    if (!currentWalletAddress) {
       setAlertInfo({ show: true, message: 'Please connect your wallet first.' });
-      return;
-    }
-    
-    if (!isXmtpActive) {
-      setAlertInfo({ show: true, message: 'Please wait for secure messaging to be set up.' });
       return;
     }
     
@@ -135,7 +202,7 @@ const AuthPage: React.FC = () => {
       console.log('=== REGISTRATION PROCESS STARTED ===');
       console.log('User data:', { 
         name: name.trim(), 
-        address, 
+        address: currentWalletAddress, 
         photoName: photo.name, 
         photoSize: photo.size,
         photoType: photo.type 
@@ -143,54 +210,30 @@ const AuthPage: React.FC = () => {
       
       setUploadingPhoto(true);
       // Upload photo to Firebase Storage
-      const photoUrl = await uploadPhotoToStorage(photo, address.toLowerCase());
+      const photoUrl = await uploadPhotoToStorage(photo, currentWalletAddress);
       console.log('✅ Photo uploaded successfully:', photoUrl);
       setUploadingPhoto(false);
 
       // Register staff with all data
       const registrationData = {
-        walletAddress: address.toLowerCase(),
+        walletAddress: currentWalletAddress,
         name: name.trim(),
         photoUrl,
       };
       
       console.log('📤 Sending registration data to backend:', registrationData);
       
-      const result = await registerStaff(registrationData);
-      console.log('✅ Registration API response:', result);
+      const savedUser = await registerStaff(registrationData);
+      console.log('✅ Registration API response:', savedUser);
 
-      // Verify the user was actually saved with robust retry logic
-      console.log('🔍 Verifying user was saved...');
-      const maxAttempts = 4;
-      let verificationAttempts = 0;
-      
-      while (verificationAttempts < maxAttempts) {
-        try {
-          // Add a delay before the first attempt and between retries
-          const delay = (verificationAttempts + 1) * 3000; // 3s, 6s, 9s, 12s
-          console.log(`⏳ Waiting for ${delay / 1000}s before verification attempt ${verificationAttempts + 1}...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-
-          const savedUser = await getStaff(address.toLowerCase());
-          console.log(`✅ User verification successful (attempt ${verificationAttempts + 1}):`, savedUser);
-          
-          if (!savedUser || !savedUser.name || !savedUser.photoUrl) {
-            throw new Error('User data was not saved correctly to the database.');
-          }
-          
-          console.log('✅ Registration completed successfully, navigating to dashboard');
-          navigate('/dashboard');
-          return; // Exit the function successfully
-          
-        } catch (verificationError) {
-          verificationAttempts++;
-          console.error(`❌ User verification failed (attempt ${verificationAttempts}):`, verificationError);
-          
-          if (verificationAttempts >= maxAttempts) {
-             throw new Error('Registration completed, but we could not verify your data immediately. Please refresh the page to log in.');
-          }
-        }
+      if (!savedUser || !savedUser.walletAddress) {
+        throw new Error('Registration failed: No user data returned from server.');
       }
+          
+      console.log('✅ Registration completed successfully, navigating to dashboard');
+      console.log('📦 Data being passed to dashboard:', { newStaffProfile: savedUser });
+      
+      navigate('/dashboard', { state: { newStaffProfile: savedUser } });
       
     } catch (error) {
       console.error("❌ Registration failed:", error);
@@ -209,36 +252,11 @@ const AuthPage: React.FC = () => {
         errorMessage = "Failed to upload photo. Please check your internet connection and try again.";
       } else if (errorMessage.includes('wallet') || errorMessage.includes('address')) {
         errorMessage = "Wallet connection issue. Please disconnect and reconnect your wallet.";
-      } else if (errorMessage.includes('name')) {
-        errorMessage = "Invalid name. Please use only letters, numbers, and spaces.";
-      } else if (errorMessage.includes('verification')) {
-        errorMessage = "Registration may have completed but verification failed. Please try refreshing the page or logging in again.";
       }
       
       setAlertInfo({ show: true, message: errorMessage });
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleDisconnect = () => {
-    disconnect();
-    setName('');
-    setPhoto(null);
-    setPhotoPreview(null);
-    setIsXmtpActive(false);
-  };
-
-  const handleConnectWallet = () => {
-    // Get the first available connector (usually MetaMask or Coinbase Wallet)
-    const connector = connectors[0];
-    if (connector) {
-      connect({ connector });
-    } else {
-      setAlertInfo({ 
-        show: true, 
-        message: 'No wallet found. Please install MetaMask or Coinbase Wallet.' 
-      });
     }
   };
 
@@ -265,6 +283,15 @@ const AuthPage: React.FC = () => {
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
+            <div className="flex items-center justify-center mb-4">
+              <button 
+                onClick={() => navigate('/')} 
+                className="absolute left-4 top-4 flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors p-2 rounded-lg hover:bg-muted"
+              >
+                <ArrowLeft size={20} />
+                <span>Back to Home</span>
+              </button>
+            </div>
             <h1 className="text-4xl font-bold text-foreground mb-3">
               Join TipMaster
             </h1>
@@ -277,44 +304,71 @@ const AuthPage: React.FC = () => {
           <div className="bg-card rounded-xl border border-border p-8 shadow-2xl">
             {/* Wallet Connection */}
             <div className="mb-8">
-              {!isConnected ? (
+              {!currentWalletAddress ? (
                 <div className="flex flex-col items-center space-y-4">
-                  <button
-                    onClick={handleConnectWallet}
-                    className="w-full max-w-sm py-4 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-3 shadow-lg hover:shadow-xl"
+                  <SafeWalletComponents
+                    fallback={
+                      <button className="w-full py-4 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-colors">
+                        Loading Wallet...
+                      </button>
+                    }
                   >
-                    <Wallet size={20} />
-                    Connect Wallet
-                  </button>
+                    {({ Wallet, ConnectWallet, WalletDropdown, Identity, Avatar, Name, Address, WalletDropdownDisconnect }) => (
+                      <Wallet>
+                        <ConnectWallet className="w-full">
+                          <div className="w-full py-4 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-colors text-center">
+                            Connect Wallet
+                          </div>
+                        </ConnectWallet>
+                        <WalletDropdown>
+                          <Identity className="px-4 pt-3 pb-2" hasCopyAddressOnClick>
+                            <Avatar />
+                            <Name />
+                            <Address />
+                          </Identity>
+                          <WalletDropdownDisconnect />
+                        </WalletDropdown>
+                      </Wallet>
+                    )}
+                  </SafeWalletComponents>
                   <p className="text-sm text-muted-foreground text-center">
-                    Connect your wallet to continue
+                    Connect your wallet to continue with registration
                   </p>
                 </div>
               ) : (
-                <div className="bg-muted rounded-lg p-4 border border-border">
+                <div className="bg-success/10 border border-success/20 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 bg-success rounded-full"></div>
+                      <div className="w-3 h-3 bg-success rounded-full animate-pulse"></div>
                       <div>
-                        <p className="text-sm font-medium text-foreground">Wallet Connected</p>
+                        <p className="text-sm font-medium text-success">Wallet Connected</p>
                         <p className="text-xs text-muted-foreground font-mono">
-                          {address?.slice(0, 6)}...{address?.slice(-4)}
+                          {currentWalletAddress?.slice(0, 6)}...{currentWalletAddress?.slice(-4)}
                         </p>
                       </div>
                     </div>
-                    <button
-                      onClick={handleDisconnect}
-                      className="p-2 text-muted-foreground hover:text-error transition-colors rounded-md hover:bg-error/10"
-                      title="Disconnect wallet"
+                    <SafeWalletComponents
+                      fallback={<div></div>}
                     >
-                      <LogOut size={16} />
-                    </button>
+                      {({ Wallet, WalletDropdown, WalletDropdownDisconnect, Identity, Avatar, Name, Address }) => (
+                        <Wallet>
+                          <WalletDropdown>
+                            <Identity className="px-4 pt-3 pb-2" hasCopyAddressOnClick>
+                              <Avatar />
+                              <Name />
+                              <Address />
+                            </Identity>
+                            <WalletDropdownDisconnect />
+                          </WalletDropdown>
+                        </Wallet>
+                      )}
+                    </SafeWalletComponents>
                   </div>
                 </div>
               )}
             </div>
 
-            {isConnected && (
+            {currentWalletAddress && (
               <form onSubmit={handleRegister} className="space-y-6">
                 {/* Profile Setup */}
                 <div className="space-y-6">
@@ -342,7 +396,7 @@ const AuthPage: React.FC = () => {
                         maxLength={50}
                       />
                       {name && name.length < 2 && (
-                        <p className="text-xs text-error mt-1">Name must be at least 2 characters</p>
+                        <p className="text-xs text-red-500 mt-1">Name must be at least 2 characters</p>
                       )}
                     </div>
 
@@ -366,7 +420,7 @@ const AuthPage: React.FC = () => {
                                 setPhoto(null);
                                 setPhotoPreview(null);
                               }}
-                              className="absolute -top-1 -right-1 w-6 h-6 bg-error text-error-foreground rounded-full flex items-center justify-center text-xs hover:bg-error/90 transition-colors"
+                              className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 transition-colors"
                               title="Remove photo"
                             >
                               ×
@@ -397,46 +451,10 @@ const AuthPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* XMTP Setup */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                      isXmtpActive ? 'bg-success' : 'bg-muted'
-                    }`}>
-                      {isXmtpActive ? (
-                        <CheckCircle size={16} className="text-success-foreground" />
-                      ) : (
-                        <MessageSquare size={16} className="text-muted-foreground" />
-                      )}
-                    </div>
-                    <h2 className="text-xl font-semibold text-foreground">Secure Messaging</h2>
-                  </div>
-
-                  <div className={`p-4 rounded-lg border transition-all ${
-                    isXmtpActive 
-                      ? 'bg-success/10 border-success text-success' 
-                      : 'bg-muted border-border'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      {isXmtpActive ? (
-                        <>
-                          <CheckCircle size={16} />
-                          <span className="font-medium">XMTP Messaging Ready</span>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                          <span className="text-muted-foreground">Setting up secure messaging...</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={!name || name.length < 2 || !photo || !isXmtpActive || isLoading || uploadingPhoto}
+                  disabled={!name || name.length < 2 || !photo || isLoading || uploadingPhoto}
                   className="w-full py-4 px-6 bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground text-primary-foreground font-semibold rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
                 >
                   {isLoading ? (

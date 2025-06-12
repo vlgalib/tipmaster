@@ -1,14 +1,264 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import '@coinbase/onchainkit/styles.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* OnchainKit dark theme variables */
+    --ock-font-family: 'Inter', sans-serif;
+    --ock-border-radius: 8px;
+    --ock-border-radius-inner: 6px;
+    
+    /* Text colors */
+    --ock-text-inverse: #ffffff;
+    --ock-text-foreground: #ffffff;
+    --ock-text-foreground-muted: #a1a1aa;
+    --ock-text-error: #ef4444;
+    --ock-text-primary: #3b82f6;
+    --ock-text-success: #22c55e;
+    --ock-text-warning: #f59e0b;
+    --ock-text-disabled: #6b7280;
+    
+    /* Background colors */
+    --ock-bg-default: #0a0a0a;
+    --ock-bg-default-hover: #1a1a1a;
+    --ock-bg-default-active: #2a2a2a;
+    --ock-bg-alternate: #1a1a1a;
+    --ock-bg-alternate-hover: #2a2a2a;
+    --ock-bg-alternate-active: #3a3a3a;
+    --ock-bg-inverse: #ffffff;
+    --ock-bg-inverse-hover: #f5f5f5;
+    --ock-bg-inverse-active: #e5e5e5;
+    --ock-bg-primary: #3b82f6;
+    --ock-bg-primary-hover: #2563eb;
+    --ock-bg-primary-active: #1d4ed8;
+    --ock-bg-primary-washed: #1e3a8a;
+    --ock-bg-primary-disabled: #374151;
+    --ock-bg-secondary: #374151;
+    --ock-bg-secondary-hover: #4b5563;
+    --ock-bg-secondary-active: #6b7280;
+    --ock-bg-error: #ef4444;
+    --ock-bg-warning: #f59e0b;
+    --ock-bg-success: #22c55e;
+    --ock-bg-default-reverse: #ffffff;
+    
+    /* Icon colors */
+    --ock-icon-color-primary: #3b82f6;
+    --ock-icon-color-foreground: #ffffff;
+    --ock-icon-color-foreground-muted: #a1a1aa;
+    --ock-icon-color-inverse: #000000;
+    --ock-icon-color-error: #ef4444;
+    --ock-icon-color-success: #22c55e;
+    --ock-icon-color-warning: #f59e0b;
+    
+    /* Line colors */
+    --ock-line-primary: #3b82f6;
+    --ock-line-default: #374151;
+    --ock-line-heavy: #6b7280;
+    --ock-line-inverse: #ffffff;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Fix OnchainKit FocusTrap styling issues */
+@layer components {
+  /* OnchainKit modal overlay fixes */
+  [data-ock-modal-overlay] {
+    background: rgba(0, 0, 0, 0.85) !important;
+    backdrop-filter: blur(8px) !important;
+    z-index: 9999 !important;
+  }
+  
+  /* OnchainKit modal content fixes */
+  [data-ock-modal-content] {
+    background: hsl(var(--card)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;
+    color: hsl(var(--foreground)) !important;
+    padding: 24px !important;
+    max-width: 400px !important;
+    width: 90vw !important;
+    position: relative !important;
+  }
+  
+  /* OnchainKit focus trap fixes */
+  [data-focus-trap] {
+    background: rgba(0, 0, 0, 0.85) !important;
+    backdrop-filter: blur(8px) !important;
+  }
+  
+  /* OnchainKit wallet modal fixes */
+  [data-ock-wallet-modal] {
+    background: hsl(var(--card)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+  
+  /* OnchainKit button fixes */
+  [data-ock-button] {
+    background: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-radius: 8px !important;
+  }
+  
+  [data-ock-button]:hover {
+    background: hsl(var(--primary)) !important;
+    opacity: 0.9 !important;
+  }
+
+  /* Fix OnchainKit wallet connect modal layout issues */
+  [data-ock-wallet-connect-modal] {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+    align-items: center !important;
+    text-align: center !important;
+  }
+
+  /* Fix OnchainKit modal header */
+  [data-ock-modal-header] {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-bottom: 24px !important;
+  }
+
+  /* Fix OnchainKit modal title */
+  [data-ock-modal-title] {
+    font-size: 24px !important;
+    font-weight: 600 !important;
+    color: hsl(var(--foreground)) !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Fix OnchainKit modal description */
+  [data-ock-modal-description] {
+    font-size: 14px !important;
+    color: hsl(var(--muted-foreground)) !important;
+    margin: 8px 0 16px 0 !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Fix OnchainKit wallet list */
+  [data-ock-wallet-list] {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    width: 100% !important;
+    margin: 16px 0 !important;
+  }
+
+  /* Fix OnchainKit wallet list item */
+  [data-ock-wallet-list-item] {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 12px 16px !important;
+    background: hsl(var(--card)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
+    width: 100% !important;
+  }
+
+  [data-ock-wallet-list-item]:hover {
+    background: hsl(var(--muted)) !important;
+    border-color: hsl(var(--primary)) !important;
+  }
+
+  /* Fix OnchainKit wallet name */
+  [data-ock-wallet-name] {
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Fix OnchainKit wallet icon */
+  [data-ock-wallet-icon] {
+    width: 24px !important;
+    height: 24px !important;
+    border-radius: 4px !important;
+  }
+
+  /* Fix OnchainKit modal footer */
+  [data-ock-modal-footer] {
+    margin-top: 24px !important;
+    padding-top: 16px !important;
+    border-top: 1px solid hsl(var(--border)) !important;
+    font-size: 12px !important;
+    color: hsl(var(--muted-foreground)) !important;
+    text-align: center !important;
+  }
+
+  /* Fix close button positioning */
+  [data-ock-modal-close] {
+    position: absolute !important;
+    top: 16px !important;
+    right: 16px !important;
+    background: transparent !important;
+    border: none !important;
+    color: hsl(var(--muted-foreground)) !important;
+    cursor: pointer !important;
+    padding: 4px !important;
+    border-radius: 4px !important;
+  }
+
+  [data-ock-modal-close]:hover {
+    background: hsl(var(--muted)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Additional OnchainKit fixes with broader selectors */
+  div[class*="ock-modal"] {
+    background: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-radius: 12px !important;
+  }
+
+  div[class*="ock-wallet"] {
+    background: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Fix any overlapping text issues */
+  div[class*="ock-modal"] * {
+    position: relative !important;
+    z-index: auto !important;
+  }
+
+  /* Ensure proper text hierarchy */
+  div[class*="ock-modal"] h1,
+  div[class*="ock-modal"] h2,
+  div[class*="ock-modal"] h3 {
+    margin: 0 0 8px 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  div[class*="ock-modal"] p {
+    margin: 8px 0 !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Fix button layout */
+  div[class*="ock-wallet"] button {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    padding: 12px 16px !important;
+    text-align: left !important;
   }
 }

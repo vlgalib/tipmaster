@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, User, Search } from 'lucide-react';
+import { searchUser } from '../services/api';
 
 const SendTipPage: React.FC = () => {
   const navigate = useNavigate();
   const [address, setAddress] = useState('');
   const [isValidating, setIsValidating] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [foundUser, setFoundUser] = useState<{ name: string; photoUrl: string; walletAddress: string } | null>(null);
 
   const validateAddress = (addr: string): boolean => {
     // Check if it's a valid Ethereum address (0x followed by 40 hex characters)
@@ -16,10 +20,55 @@ const SendTipPage: React.FC = () => {
     return ethAddressRegex.test(addr) || basenameRegex.test(addr);
   };
 
+  const handleAddressChange = async (value: string) => {
+    setAddress(value);
+    setSearchError('');
+    setFoundUser(null);
+    
+    if (value.trim() === '') {
+      return;
+    }
+
+    // If it's already a valid address, don't search
+    if (validateAddress(value)) {
+      return;
+    }
+
+    // Debounce search
+    if (isSearching) return;
+    
+    setIsSearching(true);
+    
+    try {
+      const result = await searchUser(value.trim());
+      
+      if (result.found) {
+        setFoundUser(result.user);
+        setSearchError('');
+        
+        // If searching by name, update the address
+        if (!value.startsWith('0x')) {
+          setAddress(result.user.walletAddress);
+        }
+      } else {
+        setFoundUser(null);
+        if (value.trim() && !validateAddress(value)) {
+          setSearchError('User not found. Please enter a valid wallet address or try a different name.');
+        }
+      }
+    } catch (error) {
+      console.error('Error searching user:', error);
+      setSearchError('Error searching for user. Please try again.');
+      setFoundUser(null);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address.trim()) {
-      alert('Please enter a wallet address or basename');
+      alert('Please enter a wallet address or username');
       return;
     }
 
@@ -39,13 +88,13 @@ const SendTipPage: React.FC = () => {
       }
       
       if (!validateAddress(finalAddress)) {
-        alert('Please enter a valid wallet address (0x...) or basename (.base.eth)');
+        alert('Please enter a valid wallet address (0x...) or username');
         setIsValidating(false);
         return;
       }
       
       // Navigate to the tip page with the address
-      navigate(`/tip/${finalAddress}`);
+      navigate(`/tip/${finalAddress.toLowerCase()}`);
     } catch (error) {
       console.error('Error validating address:', error);
       alert('Error validating address. Please try again.');
@@ -77,7 +126,7 @@ const SendTipPage: React.FC = () => {
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-3">Send a Tip</h1>
           <p className="text-muted-foreground text-lg">
-            Enter the recipient's wallet address or basename to send them a tip
+            Enter the recipient's name, wallet address or basename to send them a tip
           </p>
         </div>
 
@@ -86,7 +135,7 @@ const SendTipPage: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="address" className="block text-lg font-semibold text-foreground mb-3">
-                Recipient Address
+                Recipient
               </label>
               <div className="relative">
                 <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">
@@ -96,20 +145,53 @@ const SendTipPage: React.FC = () => {
                   type="text"
                   id="address"
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="0x... or username.base.eth"
-                  className="w-full pl-12 pr-4 py-4 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all text-sm font-mono"
+                  onChange={(e) => handleAddressChange(e.target.value)}
+                  placeholder="Name, 0x... or username.base.eth"
+                  className="w-full pl-12 pr-4 py-4 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all text-sm"
                   required
                 />
+                {isSearching && (
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
               </div>
+              
+              {/* Found User Display */}
+              {foundUser && (
+                <div className="mt-3 p-3 bg-success/10 border border-success/20 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <img 
+                      src={foundUser.photoUrl} 
+                      alt={foundUser.name}
+                      className="w-10 h-10 rounded-full object-cover"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">{foundUser.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono">
+                        {foundUser.walletAddress.slice(0, 8)}...{foundUser.walletAddress.slice(-6)}
+                      </p>
+                    </div>
+                    <div className="text-success">✓</div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Error Display */}
+              {searchError && (
+                <div className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                  <p className="text-sm text-destructive">{searchError}</p>
+                </div>
+              )}
+              
               <p className="text-xs text-muted-foreground mt-2">
-                Enter a wallet address (0x...) or a basename (username.base.eth)
+                Enter a name, wallet address (0x...) or a basename (username.base.eth)
               </p>
             </div>
 
             <button
               type="submit"
-              disabled={isValidating || !address.trim()}
+              disabled={isValidating || !address.trim() || searchError !== '' || isSearching}
               className="w-full py-4 px-6 bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground text-primary-foreground font-semibold rounded-lg transition-all duration-200 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isValidating ? (
@@ -131,6 +213,15 @@ const SendTipPage: React.FC = () => {
         <div className="bg-card rounded-xl border border-border p-6">
           <h3 className="text-lg font-semibold text-foreground mb-4">Examples</h3>
           <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+                <User size={14} className="text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Username</p>
+                <p className="text-xs text-muted-foreground">alice, john, sarah</p>
+              </div>
+            </div>
             <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
               <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
                 <User size={14} className="text-primary" />

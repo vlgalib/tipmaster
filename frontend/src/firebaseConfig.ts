@@ -1,9 +1,9 @@
 // This configuration is now using your project's details.
 export const firebaseConfig = {
-  apiKey: "AIzaSyCIJlTTfmxVnEH_Xdv5wFeIrLUPTF5eme4",
-  authDomain: "tips-6545c.firebaseapp.com",
-  projectId: "tips-6545c",
-  storageBucket: "tips-6545c.firebasestorage.app",
-  messagingSenderId: "150476493972",
-  appId: "1:150476493972:web:3a695b1776ad59ece51081"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 }; 

@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "tips-6545c"
-  }
-} 
+  },
+  "targets": {
+    "tips-6545c": {
+      "hosting": {
+        "app": [
+          "tips-6545c"
+        ],
+        "sandbox": [
+          "sandbox-629a5"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

@@ -1,6 +1,7 @@
-// No need for a full base URL when using rewrites. 
-// Requests will be proxied to our functions by Firebase Hosting.
-const API_BASE_URL = '/api';
+// Use different base URL for development vs production
+const API_BASE_URL = import.meta.env.DEV 
+  ? '/api' // Development: use proxy
+  : 'https://us-central1-tips-6545c.cloudfunctions.net'; // Production: direct to Firebase Functions
 
 // A helper to handle fetch requests and errors
 const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
@@ -46,13 +47,23 @@ export const getStaff = (staffId: string) => {
   return fetchApi(`getStaff?staffId=${staffId}`);
 };
 
-export const sendTip = (data: { staffId: string; amount: number; message: string; senderAddress: string, txHash: string }) => {
+export const sendTip = (data: { recipientAddress: string; amount: number; message?: string }) => {
   return fetchApi('sendTip', {
     method: 'POST',
     body: JSON.stringify(data),
   });
 };
 
-export const getHistory = (staffId: string) => {
-  return fetchApi(`getHistory?staffId=${staffId}`);
+export const searchUser = async (query: string) => {
+  console.log('[API] Searching for user:', query);
+  console.log('[API] Using base URL:', API_BASE_URL);
+  
+  try {
+    const result = await fetchApi(`searchUser?query=${encodeURIComponent(query)}`);
+    console.log('[API] Search result:', result);
+    return result;
+  } catch (error) {
+    console.error('[API] Search error:', error);
+    throw error;
+  }
 }; 

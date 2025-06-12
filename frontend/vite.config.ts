@@ -4,6 +4,15 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5001/tips-6545c/us-central1',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
@@ -37,6 +46,62 @@ export default defineConfig({
           },
         ],
       },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024 // 10 MB for XMTP WASM files
+      }
     }),
   ],
+  define: {
+    global: 'globalThis',
+    'globalThis': 'globalThis',
+    'window.globalThis': 'globalThis',
+    'self.globalThis': 'globalThis',
+    'process.env': {},
+    '__DEV__': JSON.stringify(process.env.NODE_ENV === 'development'),
+    '__PROD__': JSON.stringify(process.env.NODE_ENV === 'production'),
+    // Firebase compatibility defines
+    'process.browser': true,
+    'Buffer': 'buffer.Buffer',
+  },
+  resolve: {
+    alias: {
+      process: 'process/browser',
+      stream: 'stream-browserify',
+      util: 'util',
+      buffer: 'buffer',
+    },
+  },
+  optimizeDeps: {
+    exclude: ["@xmtp/wasm-bindings", "@xmtp/browser-sdk"],
+    include: ["@xmtp/proto", 'buffer', 'process'],
+    esbuildOptions: {
+      target: 'esnext',
+      define: {
+        global: 'globalThis',
+      },
+    },
+  },
+  worker: {
+    format: 'es'
+  },
+  build: {
+    target: 'esnext',
+    // Added source maps for debugging
+    sourcemap: true,
+    commonjsOptions: {
+      transformMixedEsModules: true,
+      include: ['node_modules/**'],
+    },
+    rollupOptions: {
+      external: [],
+      output: {
+        // Improved chunk handling for large libraries
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          xmtp: ['@xmtp/browser-sdk'],
+          onchain: ['@coinbase/onchainkit'],
+        },
+      },
+    },
+  },
 })

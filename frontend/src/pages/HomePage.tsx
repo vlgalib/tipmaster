@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, Mail, Wallet, Building, CreditCard, Shield, Users, Zap, Clock } from 'lucide-react';
+import { ChevronDown, Mail, Wallet, Building, CreditCard, Shield, Users, Zap, Clock, TrendingUp, MessageSquare, Coins } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const FaqItem = ({ question, answer }: { question: string, answer: React.ReactNode }) => {
@@ -84,6 +84,14 @@ const HomePage: React.FC = () => {
         <h2 className="text-3xl font-bold text-center mb-12">Frequently Asked Questions</h2>
         <div className="max-w-3xl mx-auto">
           <FaqItem
+            question="Why do we need crypto tips?"
+            answer={
+              <p>
+                Every country has different rules for tip payments and tip taxes, so we're creating a platform that makes receiving tips simple and convenient for everyone, regardless of future legal regulations. Crypto tips provide transparency, instant transfers, and global accessibility without traditional banking limitations.
+              </p>
+            }
+          />
+          <FaqItem
             question="How to scan a QR and send tips?"
             answer={
               <p>
@@ -165,6 +173,27 @@ const HomePage: React.FC = () => {
             icon={Zap}
             title="Staff Internal-Chat"
             description="A dedicated chat for restaurant employees to communicate and coordinate effectively within the app."
+            status="new"
+          />
+          
+          <RoadmapItem
+            icon={MessageSquare}
+            title="AI Thank You Messages"
+            description="Send personalized thank you messages for each tip or bulk responses, with AI-generated content based on tip amounts."
+            status="new"
+          />
+          
+          <RoadmapItem
+            icon={TrendingUp}
+            title="Smart Tip Recommendations"
+            description="Suggest average tip amounts based on user's history or restaurant averages, plus country-specific tipping norms."
+            status="new"
+          />
+          
+          <RoadmapItem
+            icon={Coins}
+            title="Multi-Crypto & Staking"
+            description="Accept payments in any crypto from any network with auto-conversion, plus built-in tip staking features."
             status="new"
           />
         </div>

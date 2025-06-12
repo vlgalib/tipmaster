@@ -2,16 +2,21 @@
   {
     "origin": [
       "https://tips-6545c.web.app",
+      "https://tips-6545c.firebaseapp.com",
       "http://localhost:3000",
       "http://localhost:5173",
-      "http://127.0.0.1:5173"
+      "http://127.0.0.1:5173",
+      "*"
     ],
     "method": ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"],
     "responseHeader": [
       "Content-Type",
       "Access-Control-Allow-Origin",
       "Authorization",
-      "x-goog-resumable"
+      "x-goog-resumable",
+      "Content-Length",
+      "Content-Range",
+      "Range"
     ],
     "maxAgeSeconds": 3600
   }

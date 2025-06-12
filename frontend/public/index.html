@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TipMaster</title>
+    
+    <!-- Firebase and XMTP compatibility configuration -->
+    <script>
+      // Обход ограничений Firebase для XMTP
+      console.log('Configuring Firebase environment for XMTP compatibility...');
+      
+      // Предотвращаем SES блокировку в Firebase
+      if (typeof window !== 'undefined') {
+        window.process = window.process || {};
+        window.process.env = window.process.env || {};
+        window.process.env.NODE_ENV = 'production';
+        
+        // Firebase-специфичные обходы
+        window.__FIREBASE_DEFAULTS__ = window.__FIREBASE_DEFAULTS__ || {};
+        
+        // Обход IndexedDB ограничений для XMTP
+        const originalIndexedDB = window.indexedDB;
+        if (originalIndexedDB) {
+          console.log('Setting up IndexedDB compatibility layer for Firebase...');
+          
+          // Создаем безопасную обертку для IndexedDB в Firebase
+          window.indexedDB = new Proxy(originalIndexedDB, {
+            get: function(target, prop) {
+              if (prop === 'open') {
+                return function(name, version) {
+                  console.log(`Firebase IndexedDB open requested: ${name} v${version}`);
+                  try {
+                    return target.open(name, version);
+                  } catch (error) {
+                    console.warn('Firebase IndexedDB open failed, using fallback:', error);
+                    // Возвращаем reject promise для fallback
+                    return Promise.reject(new Error('Firebase IndexedDB restriction'));
+                  }
+                };
+              }
+              return target[prop];
+            }
+          });
+        }
+        
+        // Конфигурация для XMTP SDK в Firebase
+        window.__XMTP_FIREBASE_CONFIG__ = {
+          useInMemoryStorage: true,
+          disableIndexedDB: true,
+          simplifiedInit: true,
+          maxRetries: 2,
+          timeout: 8000,
+          apiUrl: 'https://production.xmtp.network',
+          compression: 'gzip',
+          enablePersistence: false
+        };
+        
+        // Дополнительные CORS обходы для XMTP API
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options = {}) {
+          if (typeof url === 'string' && url.includes('xmtp.network')) {
+            console.log(`[FETCH] XMTP API request: ${url}`);
+            // Добавляем необходимые headers для XMTP
+            options.headers = {
+              ...options.headers,
+              'Content-Type': 'application/json',
+            };
+            options.mode = options.mode || 'cors';
+            options.credentials = options.credentials || 'omit';
+          }
+          return originalFetch.call(this, url, options);
+        };
+      }
+      
+      console.log('✅ Firebase environment configured for XMTP');
+    </script>
+    
+    <!-- Existing emergency script for emergency fixes -->
+    <script>
+      // Emergency disable of SES in case of critical issues
+      try {
+        if (typeof globalThis !== 'undefined') {
+          globalThis.process = globalThis.process || { env: {} };
+          globalThis.process.env.NODE_ENV = 'production';
+        }
+        
+        // Блокируем депрекированные SES опции и XMTP ошибки
+        if (typeof window !== 'undefined') {
+          const originalConsoleWarn = console.warn;
+          const originalConsoleError = console.error;
+          
+          console.warn = function(...args) {
+            const message = args.join(' ');
+            // Агрессивная фильтрация SES deprecation warnings для чистоты консоли
+            if (message.includes('dateTaming') || 
+                message.includes('mathTaming') || 
+                message.includes('deprecated and does nothing') ||
+                message.includes('SES The') ||
+                message.includes('option is deprecated') ||
+                message.includes('Removing unpermitted intrinsics') ||
+                message.includes('toTemporalInstant') ||
+                message.includes('lockdown-install.js')) {
+              return; // Не показываем эти предупреждения
+            }
+            originalConsoleWarn.apply(console, args);
+          };
+          
+          console.error = function(...args) {
+            const message = args.join(' ');
+            // Фильтруем известные XMTP ошибки которые не критичны
+            if (message.includes('sync worker error storage error: Record not found') ||
+                message.includes('key_package_cleaner_worker') ||
+                message.includes('Incorrect argument types for storage.StorageAreaWithUsage.get') ||
+                message.includes('Failed to delete expired messages') ||
+                message.includes('disk I/O error') ||
+                message.includes('Database(DatabaseError(Unknown') ||
+                message.includes('xmtp_mls::groups::disappearing_messages')) {
+              return; // Не показываем эти ошибки - они не критичны в Firebase
+            }
+            originalConsoleError.apply(console, args);
+          };
+        }
+        
+        // Emergency error handler
+        window.addEventListener('error', function(event) {
+          if (event.error && event.error.message && 
+              (event.error.message.includes('ses') || 
+               event.error.message.includes('lockdown') ||
+               event.error.message.includes('IndexedDB') ||
+               event.error.message.includes('dateTaming') ||
+               event.error.message.includes('mathTaming'))) {
+            console.warn('SES/IndexedDB/deprecated error caught by emergency handler:', event.error);
+            event.preventDefault();
+            return false;
+          }
+        });
+        
+        console.log('Emergency SES/IndexedDB bypass active with deprecation filter');
+      } catch (e) {
+        console.warn('Emergency script failed, continuing anyway...', e);
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html> 

@@ -1,5 +1,9 @@
 {
   "devDependencies": {
     "vite-plugin-pwa": "^1.0.0"
+  },
+  "dependencies": {
+    "@xmtp/browser-sdk": "^2.1.1",
+    "react": "^19.1.0"
   }
 }
