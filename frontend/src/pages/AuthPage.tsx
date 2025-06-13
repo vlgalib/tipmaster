@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAccount } from 'wagmi';
 import { User, ArrowLeft } from 'lucide-react';
 import { registerStaff, getStaff } from '../services/api';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -14,108 +15,51 @@ const AuthPage: React.FC = () => {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const [checkingExistingUser, setCheckingExistingUser] = useState(false);
   const [alertInfo, setAlertInfo] = useState<{ show: boolean, message: string }>({ show: false, message: '' });
+
+  // Use wagmi useAccount like XmtpContext does
+  const { address: currentWalletAddress, isConnected } = useAccount();
 
   // Check for existing user when wallet address changes
   useEffect(() => {
     const checkExistingUser = async (address: string) => {
       setCheckingExistingUser(true);
+      console.log(`[Auth] 🔍 Starting user check for address: ${address}`);
+      
       try {
-        console.log(`[Auth] Checking if user exists for address: ${address}`);
-        const staff = await getStaff(address);
+        // Add timeout to prevent infinite loading
+        const checkPromise = getStaff(address);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('User check timeout')), 3000)
+        );
+        
+        console.log(`[Auth] 📡 Making API call to check if user exists...`);
+        const staff = await Promise.race([checkPromise, timeoutPromise]);
+        
         if (staff && staff.walletAddress) {
-          console.log('✅ Existing user found:', staff);
+          console.log('✅ [Auth] Existing user found:', staff);
+          console.log('🚀 [Auth] Navigating to dashboard with state:', { newStaffProfile: staff });
           navigate('/dashboard', { state: { newStaffProfile: staff } });
           return;
+        } else {
+          console.log('ℹ️ [Auth] User exists but missing walletAddress, showing registration form');
         }
       } catch (error) {
-        console.log('✅ New user, showing registration form');
+        console.log('✅ [Auth] New user or API error, showing registration form:', error);
+        
+        // If API is down or user doesn't exist, show registration form
+        // This ensures the form always appears for new users
       } finally {
+        console.log(`[Auth] 🏁 User check completed, setting checkingExistingUser to false`);
         setCheckingExistingUser(false);
       }
     };
 
-    if (currentWalletAddress) {
+    if (currentWalletAddress && isConnected) {
       checkExistingUser(currentWalletAddress);
     }
-  }, [currentWalletAddress, navigate]);
-
-  // Enhanced wallet connection monitoring
-  useEffect(() => {
-    const checkWalletConnection = async () => {
-      // Check multiple wallet providers
-      let address = null;
-      
-      // Check window.ethereum (MetaMask, Coinbase Wallet, other injected wallets)
-      if (window.ethereum) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-          if (accounts.length > 0) {
-            address = accounts[0].toLowerCase();
-            console.log('[Auth] Found wallet via window.ethereum:', address);
-          }
-        } catch (error) {
-          console.warn('[Auth] Error checking window.ethereum:', error);
-        }
-      }
-      
-      // Check for Coinbase Wallet SDK (legacy support)
-      if (!address && window.coinbaseWalletExtension) {
-        try {
-          const accounts = await window.coinbaseWalletExtension.request({ method: 'eth_accounts' }) as string[];
-          if (accounts && accounts.length > 0) {
-            address = accounts[0].toLowerCase();
-            console.log('[Auth] Found wallet via Coinbase extension:', address);
-          }
-        } catch (error) {
-          console.warn('[Auth] Error checking Coinbase extension:', error);
-        }
-      }
-      
-      if (address) {
-        setCurrentWalletAddress(address);
-      }
-    };
-
-    checkWalletConnection();
-    
-    // Listen for account changes on multiple providers
-    const handleAccountsChanged = (accounts: string[]) => {
-      if (accounts.length > 0) {
-        const address = accounts[0].toLowerCase();
-        console.log(`[Auth] Wallet changed to: ${address}`);
-        setCurrentWalletAddress(address);
-      } else {
-        console.log('[Auth] Wallet disconnected');
-        setCurrentWalletAddress(null);
-      }
-    };
-    
-    // Set up listeners for different wallet types
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-    }
-    
-    if (window.coinbaseWalletExtension) {
-      window.coinbaseWalletExtension.on('accountsChanged', handleAccountsChanged);
-    }
-    
-    // Periodic check for wallet connection (for smart wallets that might not emit events)
-    const intervalId = setInterval(checkWalletConnection, 2000);
-    
-    return () => {
-      // Cleanup listeners
-      if (window.ethereum) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      }
-      if (window.coinbaseWalletExtension) {
-        window.coinbaseWalletExtension.removeListener('accountsChanged', handleAccountsChanged);
-      }
-      clearInterval(intervalId);
-    };
-  }, []);
+  }, [currentWalletAddress, isConnected, navigate]);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -253,6 +197,7 @@ const AuthPage: React.FC = () => {
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-muted-foreground">Checking your account...</p>
+          <p className="text-xs text-muted-foreground mt-2">Address: {currentWalletAddress}</p>
         </div>
       </div>
     );

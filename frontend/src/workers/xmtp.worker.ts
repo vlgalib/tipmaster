@@ -24,18 +24,26 @@ const isFirebaseEnvironment = () => {
 // Remote signer that communicates with main thread
 class RemoteSigner {
   private walletAddress: string;
+  private isSmartWallet: boolean;
   
-  // XMTP V3 requires type field
-  type = 'EOA' as const;
+  // XMTP V3 requires type field - set based on wallet type
+  type: 'EOA' | 'SCW';
 
-  constructor(walletAddress: string) {
+  constructor(walletAddress: string, isSmartWallet: boolean = false) {
     this.walletAddress = walletAddress;
+    this.isSmartWallet = isSmartWallet;
+    this.type = isSmartWallet ? 'SCW' : 'EOA';
   }
 
-  async getAddress() {
-    return this.walletAddress;
+  // XMTP v3 requires getIdentity() method that returns identity object
+  getIdentity() {
+    return {
+      kind: 'ETHEREUM' as const,
+      identifier: this.walletAddress.toLowerCase(),
+    };
   }
 
+  // Additional method for compatibility (if needed)
   getIdentifier() {
     return {
       identifier: this.walletAddress.toLowerCase(),
@@ -43,11 +51,20 @@ class RemoteSigner {
     };
   }
 
+  // Required for Smart Contract Wallets: getChainId method
+  getChainId() {
+    // Return the chain ID for the wallet
+    // Base mainnet = 8453, Ethereum mainnet = 1
+    const chainId = 8453; // Default to Base for Coinbase Smart Wallet
+    console.log(`[XMTP Worker] 🔗 Chain ID for ${this.type}:`, chainId);
+    return BigInt(chainId);
+  }
+
   async signMessage(message: string | Uint8Array) {
     return new Promise<Uint8Array>((resolve, reject) => {
       const requestId = `sign-${Date.now()}-${Math.random()}`;
       
-      console.log(`[XMTP Worker] 📝 Requesting signature for message (ID: ${requestId})`);
+      console.log(`[XMTP Worker] 📝 Requesting signature for ${this.isSmartWallet ? 'Smart Wallet' : 'EOA'} (ID: ${requestId})`);
       
       // Store the promise handlers
       signerRequests.set(requestId, { resolve, reject });
@@ -56,17 +73,20 @@ class RemoteSigner {
       self.postMessage({
         id: requestId,
         type: 'signRequest',
-        payload: { message }
+        payload: { message, isSmartWallet: this.isSmartWallet }
       });
       
-      // Add timeout for signature request
+      // Extended timeout for Smart Wallets (30s vs 20s for EOA) - increased base timeout for Firebase
+      const timeout = this.isSmartWallet ? 30000 : 20000;
+      console.log(`[XMTP Worker] ⏰ Setting ${timeout/1000}s timeout for signature request`);
+      
       setTimeout(() => {
         if (signerRequests.has(requestId)) {
-          console.error(`[XMTP Worker] ❌ Signature timeout for request ${requestId}`);
+          console.error(`[XMTP Worker] ❌ Signature timeout for request ${requestId} after ${timeout/1000}s`);
           signerRequests.delete(requestId);
-          reject(new Error('Signature request timeout after 10s'));
+          reject(new Error(`Signature request timeout after ${timeout/1000}s`));
         }
-      }, 10000); // 10 second timeout
+      }, timeout);
     });
   }
 
@@ -90,15 +110,61 @@ self.addEventListener('message', (event) => {
       const { resolve, reject } = signerRequests.get(id);
       if (success) {
         console.log(`[XMTP Worker] ✅ Signature successful for ID: ${id}`);
-        // Convert array back to Uint8Array
-        const signature = Array.isArray(payload.signature) 
-          ? new Uint8Array(payload.signature)
-          : payload.signature;
-        console.log(`[XMTP Worker] 🔄 Converted signature:`, {
-          originalType: Array.isArray(payload.signature) ? 'Array' : typeof payload.signature,
-          convertedType: signature.constructor.name,
-          length: signature.length
+        
+        // Detailed logging of signature conversion
+        console.log(`[XMTP Worker] 🔍 Raw payload:`, {
+          payloadType: typeof payload,
+          hasSignature: 'signature' in payload,
+          signatureType: typeof payload.signature,
+          isArray: Array.isArray(payload.signature),
+          signatureLength: payload.signature?.length,
+          firstFewBytes: Array.isArray(payload.signature) ? payload.signature.slice(0, 10) : 'N/A'
         });
+        
+        // Convert array back to Uint8Array with validation
+        let signature: Uint8Array;
+        if (Array.isArray(payload.signature)) {
+          signature = new Uint8Array(payload.signature);
+          console.log(`[XMTP Worker] 🔄 Array to Uint8Array conversion:`, {
+            originalLength: payload.signature.length,
+            convertedLength: signature.length,
+            firstFewBytes: Array.from(signature.slice(0, 10)),
+            isValidUint8Array: signature instanceof Uint8Array
+          });
+        } else if (payload.signature instanceof Uint8Array) {
+          signature = payload.signature;
+          console.log(`[XMTP Worker] ✅ Already Uint8Array, using directly`);
+        } else {
+          console.error(`[XMTP Worker] ❌ Invalid signature format:`, typeof payload.signature);
+          reject(new Error(`Invalid signature format: ${typeof payload.signature}`));
+          signerRequests.delete(id);
+          return;
+        }
+        
+        // Final validation - check signature length (should be 65 bytes for Ethereum signatures)
+        if (signature.length === 0) {
+          console.error(`[XMTP Worker] ❌ Empty signature received`);
+          reject(new Error('Empty signature received'));
+          signerRequests.delete(id);
+          return;
+        }
+        
+        if (signature.length !== 65) {
+          console.warn(`[XMTP Worker] ⚠️ Unexpected signature length: ${signature.length} (expected 65 bytes)`);
+          console.log(`[XMTP Worker] 🔍 Signature details:`, {
+            length: signature.length,
+            firstBytes: Array.from(signature.slice(0, 10)),
+            lastBytes: Array.from(signature.slice(-10))
+          });
+        }
+        
+        console.log(`[XMTP Worker] ✅ Final signature validation passed:`, {
+          type: signature.constructor.name,
+          length: signature.length,
+          isUint8Array: signature instanceof Uint8Array,
+          expectedLength: signature.length === 65 ? 'correct' : 'unexpected'
+        });
+        
         resolve(signature);
       } else {
         console.error(`[XMTP Worker] ❌ Signature failed for ID: ${id}:`, error);
@@ -119,21 +185,20 @@ self.addEventListener('message', (event) => {
 
 // --- Action Handlers ---
 
-async function initClient(payload: { walletAddress: string }) {
+async function initClient(payload: { walletAddress: string; isSmartWallet?: boolean; timeout?: number }) {
   if (xmtpClient) {
     console.log('[XMTP Worker] Client already initialized.');
     return { walletAddress: payload.walletAddress };
   }
   
-  const { walletAddress } = payload;
-  console.log('[XMTP Worker] Initializing XMTP client with v3 API (Client.create) for Firebase environment...');
+  const { walletAddress, isSmartWallet = false, timeout = 30000 } = payload;
+  console.log(`[XMTP Worker] Initializing XMTP client for ${isSmartWallet ? 'Smart Wallet' : 'EOA'} with ${timeout/1000}s timeout...`);
   
   try {
     // Create remote signer that communicates with main thread
-    const signer = new RemoteSigner(walletAddress);
+    const signer = new RemoteSigner(walletAddress, isSmartWallet);
     console.log('[XMTP Worker] Created RemoteSigner with all properties:', {
-      address: await signer.getAddress(),
-      getIdentifier: signer.getIdentifier(),
+      identity: signer.getIdentity(),
       type: signer.type,
       signerPrototype: Object.getOwnPropertyNames(Object.getPrototypeOf(signer))
     });
@@ -142,8 +207,9 @@ async function initClient(payload: { walletAddress: string }) {
     console.log('[XMTP Worker] Signer type:', typeof signer);
     console.log('[XMTP Worker] Signer instanceof RemoteSigner:', signer instanceof RemoteSigner);
 
-    // Use in-memory storage instead of IndexedDB with error suppression and timeout
-    console.log('[XMTP Worker] Starting Client.create with 15s timeout...');
+    // Use extended timeout for Smart Wallets - increased base timeout for Firebase environment
+    const clientTimeout = isSmartWallet ? 60000 : 30000; // 60s for Smart Wallet, 30s for EOA
+    console.log(`[XMTP Worker] Starting Client.create with ${clientTimeout/1000}s timeout...`);
     
     // Add progress tracking
     const progressTimer = setInterval(() => {
@@ -154,12 +220,25 @@ async function initClient(payload: { walletAddress: string }) {
       // Firebase-specific configuration to avoid IndexedDB issues
       const clientOptions = isFirebaseEnvironment() ? {
         env: 'production' as const,
-        // Critical: disable persistence for Firebase
+        // Critical: disable ALL persistence for Firebase
         enablePersistence: false,
         // Use in-memory storage only
         dbPath: undefined,
         // Simplified initialization
-        useSimplifiedInit: true
+        useSimplifiedInit: true,
+        // Additional Firebase optimizations
+        useInMemoryStorage: true,
+        skipDatabaseOperations: true,
+        // Minimal API calls
+        apiUrl: undefined,
+        // Disable SQLite completely
+        dbEncryptionKey: undefined,
+        // Disable all database operations
+        enableV3: false,
+        // Force legacy mode without database
+        legacyMode: true,
+        // Disable sync operations
+        enableSync: false
       } : {
         env: 'production' as const,
         apiUrl: 'https://production.xmtp.network'
@@ -167,18 +246,68 @@ async function initClient(payload: { walletAddress: string }) {
       
       console.log('[XMTP Worker] Using client options:', clientOptions);
       
+      console.log('[XMTP Worker] 🚀 About to call Client.create with signer:', {
+        signerType: typeof signer,
+        signerConstructor: signer.constructor.name,
+        hasGetIdentity: typeof signer.getIdentity === 'function',
+        hasGetIdentifier: typeof signer.getIdentifier === 'function',
+        hasSignMessage: typeof signer.signMessage === 'function',
+        hasType: 'type' in signer,
+        typeValue: signer.type,
+        getIdentityResult: signer.getIdentity(),
+        getIdentifierResult: signer.getIdentifier(),
+        walletAddress: walletAddress,
+        signerKeys: Object.keys(signer),
+        signerPrototype: Object.getOwnPropertyNames(Object.getPrototypeOf(signer)),
+        signerDescriptor: Object.getOwnPropertyDescriptors(signer)
+      });
+      
       xmtpClient = await Promise.race([
         Client.create(signer, clientOptions),
         new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Client.create timeout after 15s')), 15000)
+          setTimeout(() => reject(new Error(`Client.create timeout after ${clientTimeout/1000}s`)), clientTimeout)
         )
       ]);
       clearInterval(progressTimer);
       console.log('[XMTP Worker] ✅ Client.create completed successfully!');
     } catch (error) {
       clearInterval(progressTimer);
-      console.error('[XMTP Worker] ❌ Client.create failed or timed out:', error);
-      throw error;
+      console.error('[XMTP Worker] ❌ Client.create failed or timed out:', {
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorName: error instanceof Error ? error.name : undefined,
+        errorType: typeof error
+      });
+      
+      // Try ultra-minimal configuration for Firebase as fallback
+      if (isFirebaseEnvironment()) {
+        console.log('[XMTP Worker] 🔄 Trying ultra-minimal Firebase configuration as fallback...');
+        try {
+          const ultraMinimalOptions = {
+            env: 'production' as const,
+            // Absolutely minimal - disable all database operations
+            enablePersistence: false,
+            dbPath: undefined,
+            enableV3: false,
+            legacyMode: true
+          };
+          
+          const fallbackSigner = new RemoteSigner(walletAddress, isSmartWallet);
+          xmtpClient = await Promise.race([
+            Client.create(fallbackSigner, ultraMinimalOptions),
+            new Promise<never>((_, reject) => 
+              setTimeout(() => reject(new Error('Ultra-minimal client timeout after 20s')), 20000)
+            )
+          ]);
+          console.log('[XMTP Worker] ✅ Ultra-minimal fallback succeeded!');
+        } catch (fallbackError) {
+          console.error('[XMTP Worker] ❌ Ultra-minimal fallback also failed:', fallbackError);
+          throw error; // Throw original error
+        }
+      } else {
+        throw error;
+      }
     }
 
     // Suppress XMTP key package cleaner worker errors
@@ -254,7 +383,11 @@ async function initClient(payload: { walletAddress: string }) {
             // No API URL to use default
             apiUrl: undefined,
             // Minimal configuration
-            useInMemoryStorage: true
+            useInMemoryStorage: true,
+            // Disable all database operations
+            enableV3: false,
+            legacyMode: true,
+            enableSync: false
           };
           
           console.log('[XMTP Worker] Attempting ultra-simple Firebase config:', ultraSimpleOptions);

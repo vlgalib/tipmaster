@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useXmtp } from '../contexts/XmtpContext';
+import { useAccount, useWalletClient, useConnect, useDisconnect } from 'wagmi';
+import { type SignableMessage } from 'viem';
 
 interface LogEntry {
   timestamp: string;
@@ -24,10 +26,18 @@ const XmtpDebugPage: React.FC = () => {
     isConnecting: xmtpConnecting
   } = useXmtp();
   
+  // Wagmi hooks for modern wallet connection
+  const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
+  const { data: walletClient } = useWalletClient();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
+  
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [testAddress, setTestAddress] = useState('0x742b15b19a57Ab83A7dD93a0A72B0D1EE1b69f09');
   const [testMessage, setTestMessage] = useState('Hello from XMTP!');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  
+  // Legacy direct wallet connection state
   const [walletAddress, setWalletAddress] = useState<string>('');
   const [isWalletConnected, setIsWalletConnected] = useState<boolean>(false);
   
@@ -126,9 +136,17 @@ const XmtpDebugPage: React.FC = () => {
   }, [logs]);
 
   const checkWalletConnection = useCallback(async () => {
+    // Check wagmi connection
+    if (isWagmiConnected && wagmiAddress) {
+      addLog('success', `Wagmi wallet connected: ${wagmiAddress}`);
+    } else {
+      addLog('info', 'Wagmi wallet not connected');
+    }
+    
+    // Check legacy direct connection
     try {
       if (!window.ethereum) {
-        addLog('warn', 'No wallet found');
+        addLog('warn', 'No direct wallet found');
         return;
       }
       const accounts = await window.ethereum.request({ method: 'eth_accounts' });
@@ -136,15 +154,37 @@ const XmtpDebugPage: React.FC = () => {
         const address = accounts[0];
         setWalletAddress(address);
         setIsWalletConnected(true);
-        addLog('success', `Wallet already connected: ${address}`);
+        addLog('success', `Direct wallet already connected: ${address}`);
       } else {
         setIsWalletConnected(false);
-        addLog('info', 'Wallet not connected');
+        addLog('info', 'Direct wallet not connected');
       }
     } catch (error) {
-      addLog('error', 'Error checking wallet connection', error);
+      addLog('error', 'Error checking direct wallet connection', error);
     }
-  }, [addLog]);
+  }, [addLog, isWagmiConnected, wagmiAddress]);
+
+  const handleConnectWagmi = useCallback(async () => {
+    try {
+      if (connectors.length > 0) {
+        addLog('info', 'Connecting via wagmi...');
+        connect({ connector: connectors[0] });
+      } else {
+        addLog('error', 'No wagmi connectors available');
+      }
+    } catch (error) {
+      addLog('error', 'Failed to connect via wagmi', error);
+    }
+  }, [addLog, connect, connectors]);
+
+  const handleDisconnectWagmi = useCallback(() => {
+    try {
+      addLog('info', 'Disconnecting wagmi wallet...');
+      disconnect();
+    } catch (error) {
+      addLog('error', 'Failed to disconnect wagmi wallet', error);
+    }
+  }, [addLog, disconnect]);
 
   const handleConnectWallet = useCallback(async () => {
     try {
@@ -152,16 +192,16 @@ const XmtpDebugPage: React.FC = () => {
         addLog('error', 'No wallet found. Please install MetaMask.');
         return;
       }
-      addLog('info', 'Requesting wallet connection...');
+      addLog('info', 'Requesting direct wallet connection...');
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       if (accounts.length > 0) {
         const address = accounts[0];
         setWalletAddress(address);
         setIsWalletConnected(true);
-        addLog('success', `Wallet connected successfully: ${address}`);
+        addLog('success', `Direct wallet connected successfully: ${address}`);
       }
     } catch (error) {
-      addLog('error', 'Failed to connect wallet', error);
+      addLog('error', 'Failed to connect direct wallet', error);
     }
   }, [addLog]);
 
@@ -258,6 +298,161 @@ const XmtpDebugPage: React.FC = () => {
     </div>
   );
 
+  // Test wagmi signature function
+  const testWagmiSignature = async () => {
+    try {
+      if (!isWagmiConnected || !wagmiAddress || !walletClient) {
+        addLog('warn', 'Wagmi wallet not connected or walletClient not available');
+        return;
+      }
+
+      addLog('info', '🧪 [Wagmi] Testing wagmi signature process...');
+      
+      // Create wagmi-based signer similar to XmtpContext
+      const wagmiSigner = {
+        type: 'EOA' as const,
+        
+        getIdentity() {
+          return {
+            kind: 'ETHEREUM' as const,
+            identifier: wagmiAddress.toLowerCase(),
+          };
+        },
+        
+        getIdentifier() {
+          return {
+            identifier: wagmiAddress.toLowerCase(),
+            identifierKind: 'Ethereum' as const
+          };
+        },
+        
+        async signMessage(message: string | Uint8Array) {
+          addLog('info', '📝 [Wagmi] Starting signature with wagmi...', {
+            messageType: typeof message,
+            messageLength: message instanceof Uint8Array ? message.length : message.length,
+            isUint8Array: message instanceof Uint8Array
+          });
+          
+          const messageToSign: SignableMessage = typeof message === 'string' 
+            ? message 
+            : { raw: message };
+          
+          const signature = await walletClient.signMessage({ 
+            account: walletClient.account!, 
+            message: messageToSign 
+          });
+          
+          addLog('success', '✅ [Wagmi] Raw signature received', {
+            signatureLength: signature.length,
+            signatureType: typeof signature,
+            signatureStart: signature.substring(0, 10),
+            signatureEnd: signature.substring(signature.length - 10),
+            fullSignature: signature
+          });
+          
+          // Use the same conversion logic as XmtpContext
+          if (signature.length === 132) {
+            const hex = signature.startsWith('0x') ? signature.slice(2) : signature;
+            const bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < hex.length; i += 2) {
+              bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+            }
+            
+            addLog('success', '🔄 [Wagmi] Converted to Uint8Array', {
+              originalHexLength: hex.length,
+              uint8ArrayLength: bytes.length,
+              expectedLength: bytes.length === 65 ? 'correct (65 bytes)' : `unexpected (${bytes.length} bytes)`,
+              firstBytes: Array.from(bytes.slice(0, 10)),
+              lastBytes: Array.from(bytes.slice(-5))
+            });
+            
+            return bytes;
+          } else if (signature.length > 132) {
+            // Handle Coinbase Smart Wallet long format (same as XmtpContext)
+            addLog('warn', '⚠️ [Wagmi] Attempting to extract standard signature from long format...');
+            
+            const hex = signature.startsWith('0x') ? signature.slice(2) : signature;
+            let extractedHex = '';
+            
+            // Strategy 1: Look for the last 130 hex characters (65 bytes)
+            if (hex.length >= 130) {
+              extractedHex = hex.slice(-130);
+            }
+            
+            // Strategy 2: If that doesn't work, try to find a valid signature pattern
+            if (!extractedHex && hex.length > 130) {
+              const patterns = [
+                /([0-9a-f]{130})$/i,  // Last 130 hex chars
+                /([0-9a-f]{130})[0-9a-f]*$/i,  // 130 hex chars followed by anything
+                /^[0-9a-f]*?([0-9a-f]{130})[0-9a-f]*$/i  // 130 hex chars anywhere
+              ];
+              
+              for (const pattern of patterns) {
+                const match = hex.match(pattern);
+                if (match && match[1]) {
+                  extractedHex = match[1];
+                  addLog('info', '🎯 [Wagmi] Found signature using pattern: ' + pattern.source);
+                  break;
+                }
+              }
+            }
+            
+            // Strategy 3: If still no luck, try extracting from middle section
+            if (!extractedHex && hex.length > 260) {
+              const start = Math.floor((hex.length - 130) / 2);
+              extractedHex = hex.slice(start, start + 130);
+              addLog('info', '🔍 [Wagmi] Trying middle extraction from position: ' + start);
+            }
+            
+            if (extractedHex && extractedHex.length === 130) {
+              const bytes = new Uint8Array(65);
+              for (let i = 0; i < 130; i += 2) {
+                bytes[i / 2] = parseInt(extractedHex.substr(i, 2), 16);
+              }
+              
+              addLog('success', '🔄 [Wagmi] Extracted standard signature from long format', {
+                originalLength: hex.length,
+                extractedLength: extractedHex.length,
+                uint8ArrayLength: bytes.length,
+                firstBytes: Array.from(bytes.slice(0, 10)),
+                lastBytes: Array.from(bytes.slice(-5)),
+                extractionStrategy: 'smart-wallet-compatible'
+              });
+              
+              return bytes;
+            } else {
+              addLog('error', '❌ [Wagmi] Failed to extract valid signature from long format', {
+                originalLength: hex.length,
+                extractedLength: extractedHex.length
+              });
+              throw new Error(`Failed to extract signature from long format: ${hex.length} chars`);
+            }
+          } else {
+            addLog('error', '❌ [Wagmi] Unexpected signature format', {
+              signatureLength: signature.length,
+              expectedLength: 132
+            });
+            throw new Error(`Invalid signature format: length ${signature.length}`);
+          }
+        }
+      };
+
+      // Test signing a simple message
+      const testMessage = 'XMTP wagmi signature test';
+      addLog('info', `🧪 [Wagmi] Testing signature with message: "${testMessage}"`);
+      
+      const testSignature = await wagmiSigner.signMessage(testMessage);
+      addLog('success', `✅ [Wagmi] Test signature successful!`, {
+        signatureLength: testSignature.length,
+        isUint8Array: testSignature instanceof Uint8Array
+      });
+
+    } catch (error: any) {
+      addLog('error', `❌ [Wagmi] Signature test failed: ${error.message}`, error);
+      console.error('Wagmi signature test error:', error);
+    }
+  };
+
   const testDirectXmtpClient = async () => {
     try {
       if (!isWalletConnected || !walletAddress) {
@@ -277,36 +472,90 @@ const XmtpDebugPage: React.FC = () => {
       // Create a simple signer similar to RemoteSigner but in main thread
       const directSigner = {
         type: 'EOA' as const,
-        identifier: walletAddress.toLowerCase(),
         
         async getAddress() {
           return walletAddress;
         },
         
+        getIdentity() {
+          return {
+            kind: 'ETHEREUM' as const,
+            identifier: walletAddress.toLowerCase(),
+          };
+        },
+        
         getIdentifier() {
-          return walletAddress.toLowerCase();
+          return {
+            identifier: walletAddress.toLowerCase(),
+            identifierKind: 'Ethereum' as const
+          };
         },
         
         async signMessage(message: string | Uint8Array) {
           try {
+            addLog('info', '📝 [Direct] Starting signature process...', {
+              messageType: typeof message,
+              messageLength: message instanceof Uint8Array ? message.length : message.length,
+              isUint8Array: message instanceof Uint8Array,
+              walletAddress: walletAddress
+            });
+            
             let messageToSign: string;
             if (message instanceof Uint8Array) {
               // Convert Uint8Array to hex string for signing
               messageToSign = '0x' + Array.from(message).map(b => b.toString(16).padStart(2, '0')).join('');
+              addLog('info', '🔄 [Direct] Converted Uint8Array to hex for signing', {
+                originalLength: message.length,
+                hexLength: messageToSign.length,
+                hexPreview: messageToSign.substring(0, 20) + '...'
+              });
             } else {
               messageToSign = message;
+              addLog('info', '📄 [Direct] Using string message as-is', {
+                messagePreview: message.substring(0, 50) + (message.length > 50 ? '...' : '')
+              });
             }
+            
+            addLog('info', '🔐 [Direct] Requesting signature via personal_sign...', {
+              method: 'personal_sign',
+              messageToSign: messageToSign.substring(0, 50) + (messageToSign.length > 50 ? '...' : ''),
+              walletAddress: walletAddress
+            });
             
             const signature = await window.ethereum.request({
               method: 'personal_sign',
               params: [messageToSign, walletAddress]
             });
             
-            // Convert hex signature to Uint8Array
+            addLog('success', '✅ [Direct] Raw signature received from wallet', {
+              signatureLength: signature.length,
+              signatureType: typeof signature,
+              signatureStart: signature.substring(0, 10),
+              signatureEnd: signature.substring(signature.length - 10),
+              hasPrefix: signature.startsWith('0x')
+            });
+            
+            // Convert hex signature to Uint8Array using the SAME method as XmtpContext
             const hex = signature.startsWith('0x') ? signature.slice(2) : signature;
-            return new Uint8Array(hex.match(/.{2}/g)?.map((byte: string) => parseInt(byte, 16)) || []);
+            
+            // Use the same conversion method as in XmtpContext
+            const bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < hex.length; i += 2) {
+              bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+            }
+            
+            addLog('success', '🔄 [Direct] Converted hex to Uint8Array (same method as XmtpContext)', {
+              originalHexLength: hex.length,
+              uint8ArrayLength: bytes.length,
+              expectedLength: bytes.length === 65 ? 'correct (65 bytes)' : `unexpected (${bytes.length} bytes)`,
+              firstBytes: Array.from(bytes.slice(0, 10)),
+              lastBytes: Array.from(bytes.slice(-5)),
+              conversionMethod: 'for-loop with parseInt(hex.substr(i, 2), 16)'
+            });
+            
+            return bytes;
           } catch (signError) {
-            addLog('error', 'Signing failed', signError);
+            addLog('error', '❌ [Direct] Signing failed', signError);
             throw signError;
           }
         }
@@ -314,23 +563,32 @@ const XmtpDebugPage: React.FC = () => {
 
       addLog('success', `Direct signer created: ${JSON.stringify({
         type: directSigner.type,
-        identifier: directSigner.identifier,
+        identifier: directSigner.getIdentifier().identifier,
         address: await directSigner.getAddress(),
         getIdentifier: directSigner.getIdentifier()
       })}`);
 
-      // Try Client.build
-      const xmtpClient = await (Client as any).build({ 
-        signer: directSigner,
-        env: 'production',
-        options: {
-          skipContactPublishing: true,
-          useGroupsSqlStorage: false
-        }
+      // Try Client.create (XMTP v3 method)
+      addLog('info', '🚀 [Direct] Calling Client.create with direct signer...', {
+        signerType: typeof directSigner,
+        hasGetIdentity: typeof directSigner.getIdentity === 'function',
+        hasGetIdentifier: typeof directSigner.getIdentifier === 'function',
+        hasSignMessage: typeof directSigner.signMessage === 'function',
+        getIdentityResult: directSigner.getIdentity(),
+        getIdentifierResult: directSigner.getIdentifier()
+      });
+      
+      const xmtpClient = await Client.create(directSigner, {
+        env: 'production'
       });
 
-      const clientAddress = await xmtpClient.getAddress();
-      addLog('success', `✅ Direct XMTP client created successfully: ${clientAddress}`);
+      // In XMTP v3, client doesn't have getAddress() method, use walletAddress
+      addLog('success', `✅ Direct XMTP client created successfully: ${walletAddress}`, {
+        clientType: typeof xmtpClient,
+        hasInboxId: 'inboxId' in xmtpClient,
+        hasConversations: 'conversations' in xmtpClient,
+        inboxId: (xmtpClient as any).inboxId || 'not available'
+      });
       
     } catch (error: any) {
       addLog('error', `❌ Direct XMTP client failed: ${error.message}`);
@@ -413,7 +671,13 @@ const XmtpDebugPage: React.FC = () => {
               <h2 className="text-lg font-semibold mb-3 text-purple-300 border-b border-purple-500/20 pb-2">Connection</h2>
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span>Wallet:</span>
+                  <span>Wagmi Wallet:</span>
+                  <span className={isWagmiConnected ? 'text-green-400' : 'text-red-400'}>
+                    {isWagmiConnected ? `Connected (${wagmiAddress?.substring(0, 6)}...${wagmiAddress?.substring(wagmiAddress.length - 4)})` : 'Disconnected'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Direct Wallet:</span>
                   <span className={isWalletConnected ? 'text-green-400' : 'text-red-400'}>
                     {isWalletConnected ? `Connected (${walletAddress.substring(0, 6)}...${walletAddress.substring(walletAddress.length - 4)})` : 'Disconnected'}
                   </span>
@@ -424,13 +688,36 @@ const XmtpDebugPage: React.FC = () => {
                     {xmtpConnected ? 'Connected' : xmtpConnecting ? 'Connecting...' : 'Disconnected'}
                   </span>
                 </div>
-                {!isWalletConnected ? (
-                  <button onClick={handleConnectWallet} className="w-full bg-blue-600 hover:bg-blue-700 rounded-md py-2 transition-colors">Connect Wallet</button>
-                ) : !xmtpConnected ? (
-                  <button onClick={handleConnectXmtp} disabled={xmtpConnecting} className="w-full bg-purple-600 hover:bg-purple-700 rounded-md py-2 transition-colors disabled:bg-gray-500">Connect XMTP</button>
-                ) : (
-                  <button onClick={handleDisconnectXmtp} className="w-full bg-red-600 hover:bg-red-700 rounded-md py-2 transition-colors">Disconnect XMTP</button>
-                )}
+                
+                {/* Wagmi Connection Buttons */}
+                <div className="border-t border-gray-700 pt-2">
+                  <div className="text-xs text-gray-400 mb-2">Wagmi Connection:</div>
+                  {!isWagmiConnected ? (
+                    <button onClick={handleConnectWagmi} className="w-full bg-blue-600 hover:bg-blue-700 rounded-md py-2 transition-colors text-sm">Connect Wagmi Wallet</button>
+                  ) : (
+                    <button onClick={handleDisconnectWagmi} className="w-full bg-red-600 hover:bg-red-700 rounded-md py-2 transition-colors text-sm">Disconnect Wagmi</button>
+                  )}
+                </div>
+                
+                {/* Direct Connection Buttons */}
+                <div className="border-t border-gray-700 pt-2">
+                  <div className="text-xs text-gray-400 mb-2">Direct Connection:</div>
+                  {!isWalletConnected ? (
+                    <button onClick={handleConnectWallet} className="w-full bg-green-600 hover:bg-green-700 rounded-md py-2 transition-colors text-sm">Connect Direct Wallet</button>
+                  ) : (
+                    <div className="text-xs text-green-400">Direct wallet connected</div>
+                  )}
+                </div>
+                
+                {/* XMTP Connection */}
+                <div className="border-t border-gray-700 pt-2">
+                  <div className="text-xs text-gray-400 mb-2">XMTP Connection:</div>
+                  {!xmtpConnected ? (
+                    <button onClick={handleConnectXmtp} disabled={xmtpConnecting || (!isWagmiConnected && !isWalletConnected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-md py-2 transition-colors disabled:bg-gray-500 text-sm">Connect XMTP</button>
+                  ) : (
+                    <button onClick={handleDisconnectXmtp} className="w-full bg-red-600 hover:bg-red-700 rounded-md py-2 transition-colors text-sm">Disconnect XMTP</button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -459,7 +746,10 @@ const XmtpDebugPage: React.FC = () => {
                     <button onClick={handleGetHistory} disabled={!xmtpConnected || isLoading} className="bg-blue-600 hover:bg-blue-700 rounded-md py-2 transition-colors disabled:bg-gray-500">Get History</button>
                   </div>
                 </div>
-                <div className="border-t border-gray-700 pt-3">
+                <div className="border-t border-gray-700 pt-3 space-y-2">
+                  <button onClick={testWagmiSignature} disabled={!isWagmiConnected || isLoading} className="w-full bg-blue-600 hover:bg-blue-700 rounded-md py-2 transition-colors disabled:bg-gray-500 text-sm">
+                    🧪 Test Wagmi Signature
+                  </button>
                   <button onClick={testDirectXmtpClient} disabled={!isWalletConnected || isLoading} className="w-full bg-orange-600 hover:bg-orange-700 rounded-md py-2 transition-colors disabled:bg-gray-500 text-sm">
                     🧪 Test Direct XMTP (Main Thread)
                   </button>

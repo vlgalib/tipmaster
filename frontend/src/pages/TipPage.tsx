@@ -9,7 +9,7 @@ import SafeOnchainProvider from '../components/SafeOnchainProvider';
 import SafeWalletComponents from '../components/SafeWalletComponents';
 import { base } from 'viem/chains';
 import type { LifecycleStatus } from '@coinbase/onchainkit/transaction';
-import { useDisconnect } from 'wagmi';
+import { useDisconnect, useAccount } from 'wagmi';
 
 // USDC contract address on Base mainnet
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -19,6 +19,9 @@ const TipPageContent: React.FC = () => {
   const navigate = useNavigate();
   const { disconnect } = useDisconnect();
   
+  // Use wagmi useAccount like DashboardPage does
+  const { address: currentWalletAddress, isConnected: isWagmiConnected } = useAccount();
+  
   const [staff, setStaff] = useState<{ name: string; photoUrl: string } | null>(null);
   const [amount, setAmount] = useState(5);
   const [customAmount, setCustomAmount] = useState('');
@@ -27,7 +30,19 @@ const TipPageContent: React.FC = () => {
   const [copySuccessMessage, setCopySuccessMessage] = useState('');
   const [isCorrectNetwork, setIsCorrectNetwork] = useState(true);
   const [usdcBalance, setUsdcBalance] = useState('0');
-  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  
+  // Derive wallet connection status from wagmi - be more flexible like DashboardPage
+  const isWalletConnected = !!currentWalletAddress; // Just check if address exists
+  
+  // Debug wallet connection status
+  useEffect(() => {
+    console.log('[TipPage] 🔍 Wallet Status Debug:', {
+      currentWalletAddress,
+      isWagmiConnected,
+      isWalletConnected,
+      hasAddress: !!currentWalletAddress
+    });
+  }, [currentWalletAddress, isWagmiConnected, isWalletConnected]);
   const [isEditingRecipient, setIsEditingRecipient] = useState(false);
   const [customRecipient, setCustomRecipient] = useState('');
   const [customRecipientName, setCustomRecipientName] = useState('');
@@ -42,11 +57,16 @@ const TipPageContent: React.FC = () => {
   const [isWarmingUp, setIsWarmingUp] = useState(false);
   const [warmupStatus, setWarmupStatus] = useState<string>('');
   const [isWarmedUp, setIsWarmedUp] = useState(false);
+  
+  // Auto-connect XMTP retry limit (same as DashboardPage)
+  const [xmtpRetryCount, setXmtpRetryCount] = useState(0);
+  const maxRetries = 2; // 2 auto-retries, then manual connection required
 
   // Get XMTP functions, but with error handling
   let sendMessage: any = null;
   let connect: any = null;
   let isConnected = false;
+  let isConnecting = false;
   let warmupConversation: any = null;
   let xmtpDisconnect: any = null;
   
@@ -55,6 +75,7 @@ const TipPageContent: React.FC = () => {
     sendMessage = xmtp.sendMessage;
     connect = xmtp.connect;
     isConnected = xmtp.isConnected;
+    isConnecting = xmtp.isConnecting;
     warmupConversation = xmtp.warmupConversation;
     xmtpDisconnect = xmtp.disconnect;
   } catch (error) {
@@ -76,6 +97,38 @@ const TipPageContent: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [copySuccessMessage]);
+
+  // Auto-connect XMTP when wallet is connected (with retry limit)
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
+    if (currentWalletAddress && !isConnected && !isConnecting && connect && xmtpRetryCount < maxRetries) {
+      console.log(`[TipPage] Scheduling XMTP auto-connect for address: ${currentWalletAddress} (attempt ${xmtpRetryCount + 1}/${maxRetries})`);
+      
+      // Debounce the connection attempt to prevent rapid retries
+      timeoutId = setTimeout(async () => {
+        try {
+          await connect();
+          setXmtpRetryCount(0); // Reset retry count on success
+        } catch (error) {
+          console.warn(`⚠️ [TipPage] Failed to auto-connect XMTP (attempt ${xmtpRetryCount + 1}):`, error);
+          setXmtpRetryCount(prev => prev + 1);
+          
+          if (xmtpRetryCount + 1 >= maxRetries) {
+            console.error('❌ [TipPage] XMTP auto-connect failed after maximum retries. Manual connection required.');
+          }
+        }
+      }, 5000); // Single 5 second delay
+    } else if (xmtpRetryCount >= maxRetries) {
+      console.log('[TipPage] XMTP auto-connect disabled after maximum retries. Use manual connect button.');
+    }
+    
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [currentWalletAddress, isConnected, isConnecting, connect, xmtpRetryCount]);
 
   // Auto-warmup XMTP when wallet connects
   useEffect(() => {
@@ -117,9 +170,9 @@ const TipPageContent: React.FC = () => {
   // Check wallet connection and get USDC balance
   const checkWalletAndBalance = async () => {
     try {
-      if (!window.ethereum) {
-        console.warn('[TipPage] ⚠️ No window.ethereum found');
-        setIsWalletConnected(false);
+      if (!currentWalletAddress || !window.ethereum) {
+        console.warn('[TipPage] ⚠️ No wallet address or window.ethereum found');
+        setUsdcBalance('0');
         return;
       }
 
@@ -132,54 +185,46 @@ const TipPageContent: React.FC = () => {
         console.log('[TipPage] 🔗 Generic wallet detected');
       }
 
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      if (accounts.length > 0) {
-        setIsWalletConnected(true);
-        const userAddress = accounts[0];
+      const userAddress = currentWalletAddress;
         
-        console.log('[TipPage] 💰 Fetching USDC balance for:', userAddress);
-        
-        // ERC-20 balanceOf call
-        const balanceOfData = '0x70a08231' + userAddress.slice(2).padStart(64, '0');
-        
-        console.log('[TipPage] 📞 Making eth_call with data:', balanceOfData);
-        
-        const result = await window.ethereum.request({
-          method: 'eth_call',
-          params: [{
-            to: USDC_ADDRESS,
-            data: balanceOfData
-          }, 'latest']
-        });
-        
-        console.log('[TipPage] 📋 Raw result from eth_call:', result);
-        
-        // Validate result
-        if (!result || typeof result !== 'string' || !result.startsWith('0x')) {
-          console.error('[TipPage] ❌ Invalid result format:', result);
-          setUsdcBalance('0');
-          return;
-        }
-        
-        // Convert hex to decimal and adjust for 6 decimals (USDC)
-        const balanceWei = parseInt(result, 16);
-        
-        if (isNaN(balanceWei)) {
-          console.error('[TipPage] ❌ Failed to parse balance as number:', result);
-          setUsdcBalance('0');
-          return;
-        }
-        
-        const balance = (balanceWei / 1000000).toFixed(2); // USDC has 6 decimals
-        console.log('[TipPage] ✅ USDC balance calculated:', balance);
-        setUsdcBalance(balance);
-      } else {
-        setIsWalletConnected(false);
+      console.log('[TipPage] 💰 Fetching USDC balance for:', userAddress);
+      
+      // ERC-20 balanceOf call
+      const balanceOfData = '0x70a08231' + userAddress.slice(2).padStart(64, '0');
+      
+      console.log('[TipPage] 📞 Making eth_call with data:', balanceOfData);
+      
+      const result = await window.ethereum.request({
+        method: 'eth_call',
+        params: [{
+          to: USDC_ADDRESS,
+          data: balanceOfData
+        }, 'latest']
+      });
+      
+      console.log('[TipPage] 📋 Raw result from eth_call:', result);
+      
+      // Validate result
+      if (!result || typeof result !== 'string' || !result.startsWith('0x')) {
+        console.error('[TipPage] ❌ Invalid result format:', result);
         setUsdcBalance('0');
+        return;
       }
+      
+      // Convert hex to decimal and adjust for 6 decimals (USDC)
+      const balanceWei = parseInt(result, 16);
+      
+      if (isNaN(balanceWei)) {
+        console.error('[TipPage] ❌ Failed to parse balance as number:', result);
+        setUsdcBalance('0');
+        return;
+      }
+      
+      const balance = (balanceWei / 1000000).toFixed(2); // USDC has 6 decimals
+      console.log('[TipPage] ✅ USDC balance calculated:', balance);
+      setUsdcBalance(balance);
     } catch (error) {
       console.error('[TipPage] ❌ Error checking wallet/balance:', error);
-      setIsWalletConnected(false);
       setUsdcBalance('0');
     }
   };
@@ -206,7 +251,6 @@ const TipPageContent: React.FC = () => {
       }
       
       // Clear local state
-      setIsWalletConnected(false);
       setUsdcBalance('0');
       setIsWarmedUp(false);
       setWarmupStatus('');
@@ -229,7 +273,6 @@ const TipPageContent: React.FC = () => {
     } catch (error) {
       console.error('[TipPage] ❌ Error during logout:', error);
       // Still update state even if something fails
-      setIsWalletConnected(false);
       setUsdcBalance('0');
       setIsWarmedUp(false);
     }
@@ -311,37 +354,16 @@ const TipPageContent: React.FC = () => {
     }
   }, []);
 
-  // Monitor wallet connection status periodically to catch OnchainKit connections
+  // Monitor wallet connection status and update balance when wallet changes
   useEffect(() => {
-    const checkWalletStatus = async () => {
-      if (window.ethereum) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-          const wasConnected = isWalletConnected;
-          const isNowConnected = accounts.length > 0;
-          
-          if (!wasConnected && isNowConnected) {
-            console.log('[TipPage] 🔗 Wallet connection detected, updating status...');
-            await checkWalletAndBalance();
-          } else if (wasConnected && !isNowConnected) {
-            console.log('[TipPage] 🔌 Wallet disconnection detected');
-            setIsWalletConnected(false);
-            setUsdcBalance('0');
-          }
-        } catch (error) {
-          console.warn('[TipPage] Error checking wallet status:', error);
-        }
-      }
-    };
-
-    // Check immediately
-    checkWalletStatus();
-    
-    // Then check every 2 seconds to catch OnchainKit wallet connections
-    const interval = setInterval(checkWalletStatus, 2000);
-    
-    return () => clearInterval(interval);
-  }, [isWalletConnected]);
+    if (isWalletConnected && currentWalletAddress) {
+      console.log('[TipPage] 🔗 Wallet connected, updating balance...');
+      checkWalletAndBalance();
+    } else if (!isWalletConnected) {
+      console.log('[TipPage] 🔌 Wallet disconnected, clearing balance');
+      setUsdcBalance('0');
+    }
+  }, [isWalletConnected, currentWalletAddress]);
 
   const handleOnStatus = React.useCallback((status: LifecycleStatus) => {
     console.log('Transaction status:', status);
@@ -358,10 +380,13 @@ const TipPageContent: React.FC = () => {
       if (txHash && !customRecipient && staffId) {
         const sendXmtpNotification = async () => {
           try {
-            // Send notification only via frontend XMTP
-            if (!isConnected && connect) {
+            // Send notification only via frontend XMTP (with retry limit check)
+            if (!isConnected && connect && xmtpRetryCount < maxRetries) {
               console.log('Connecting XMTP for notification...');
               await connect();
+            } else if (xmtpRetryCount >= maxRetries) {
+              console.log('XMTP auto-connect disabled due to retry limit, skipping notification');
+              return;
             }
 
             if (sendMessage && isConnected) {

@@ -116,7 +116,12 @@
                 message.includes('Failed to delete expired messages') ||
                 message.includes('disk I/O error') ||
                 message.includes('Database(DatabaseError(Unknown') ||
-                message.includes('xmtp_mls::groups::disappearing_messages')) {
+                message.includes('xmtp_mls::groups::disappearing_messages') ||
+                message.includes('NoModificationAllowedError') ||
+                message.includes('No modification allowed') ||
+                message.includes('sync access handle') ||
+                message.includes('An error occurred while creating sync access handle') ||
+                message.includes('xmtp_db::encrypted_store::database::wasm')) {
               return; // Не показываем эти ошибки - они не критичны в Firebase
             }
             originalConsoleError.apply(console, args);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAccount } from 'wagmi';
 import { QRCodeCanvas } from 'qrcode.react';
 import { DollarSign, AlertTriangle, LogOut, Copy, TrendingUp, Eye, EyeOff, Edit, Save, X, MessageCircle, RefreshCw } from 'lucide-react';
 import { getStaff, registerStaff } from '../services/api';
@@ -29,11 +30,15 @@ const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
-    const {
+  // Use wagmi useAccount like AuthPage does
+  const { address: currentWalletAddress, isConnected } = useAccount();
+  
+  const {
     connect: connectXmtp,
     disconnect: disconnectXmtp,
     isConnected: isXmtpConnected,
     isConnecting: isXmtpConnecting,
+    isSmartWallet,
     getConversationHistory
   } = useXmtp();
 
@@ -41,7 +46,6 @@ const DashboardPage: React.FC = () => {
   const [showQR, setShowQR] = useState(false);
   const [addressVisible, setAddressVisible] = useState(false);
   const [staffData, setStaffData] = useState<StaffData | null>(null);
-  const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const [usdcBalance, setUsdcBalance] = useState<string>('0');
   const [xmtpMessages, setXmtpMessages] = useState<XmtpMessage[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -51,62 +55,39 @@ const DashboardPage: React.FC = () => {
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [copySuccessMessage, setCopySuccessMessage] = useState('');
 
-  // Monitor wallet connection via window.ethereum
+  // Monitor wallet connection via wagmi
   useEffect(() => {
-    const checkWalletConnection = async () => {
-      if (window.ethereum) {
-        try {
-          // Log wallet type for debugging
-          if (window.ethereum.isCoinbaseWallet) {
-            console.log('[Dashboard] 🟦 Coinbase Wallet detected');
-          } else if (window.ethereum.isMetaMask) {
-            console.log('[Dashboard] 🦊 MetaMask detected');
-          } else {
-            console.log('[Dashboard] 🔗 Generic wallet detected');
-          }
-
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-          if (accounts.length > 0) {
-            setCurrentWalletAddress(accounts[0].toLowerCase());
-            
-            // Get USDC balance
-            await getUsdcBalance(accounts[0]);
-          } else {
-            navigate('/');
-          }
-        } catch (error) {
-          console.error('[Dashboard] Error checking wallet:', error);
-          navigate('/');
-        }
-      } else {
-        console.warn('[Dashboard] ⚠️ No window.ethereum found');
-        navigate('/');
-      }
-    };
-
-    checkWalletConnection();
+    console.log('[Dashboard] 🔍 Wallet check:', { 
+      isConnected, 
+      currentWalletAddress, 
+      location: location.pathname,
+      hasLocationState: !!location.state 
+    });
     
-    // Listen for account changes
-    if (window.ethereum) {
-      const handleAccountsChanged = (accounts: string[]) => {
-        console.log('[Dashboard] Accounts changed:', accounts);
-        if (accounts.length === 0) {
-          console.log('[Dashboard] Wallet disconnected via MetaMask/wallet');
-          handleLogout();
-        } else if (accounts[0] !== currentWalletAddress) {
-          console.log('[Dashboard] Switched to different account');
-          setCurrentWalletAddress(accounts[0].toLowerCase());
-          getUsdcBalance(accounts[0]);
-        }
-      };
-      
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      
-      return () => {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      };
+    // Log wallet type for debugging
+    if (window.ethereum?.isCoinbaseWallet) {
+      console.log('[Dashboard] 🟦 Coinbase Wallet detected');
+    } else if (window.ethereum?.isMetaMask) {
+      console.log('[Dashboard] 🦊 MetaMask detected');
+    } else if (window.ethereum) {
+      console.log('[Dashboard] 🔗 Generic wallet detected');
     }
-  }, [navigate]);
+
+    if (!isConnected || !currentWalletAddress) {
+      console.log('[Dashboard] ❌ No wallet connected, redirecting to auth');
+      console.log('[Dashboard] 🔍 Redirect reason:', { 
+        isConnected, 
+        currentWalletAddress, 
+        hasLocationState: !!location.state 
+      });
+      navigate('/auth');
+      return;
+    }
+
+    console.log('[Dashboard] ✅ Wallet connected:', currentWalletAddress);
+    // Get USDC balance
+    getUsdcBalance(currentWalletAddress);
+  }, [isConnected, currentWalletAddress, navigate, location]);
 
   // Get USDC balance
   const getUsdcBalance = async (address: string) => {
@@ -195,12 +176,17 @@ const DashboardPage: React.FC = () => {
     }
   }, [currentWalletAddress, staffData, navigate]);
 
-  // Auto-connect XMTP when wallet is connected (with debounce and retry limit)
+  // Auto-connect XMTP when wallet is connected (with retry limit)
   const [xmtpRetryCount, setXmtpRetryCount] = useState(0);
-  const maxRetries = 2; // Reduced from 3 to 2
+  const maxRetries = 2; // 2 auto-retries, then manual connection required
   
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
+    
+    // Smart Wallets require longer timeout but should still try XMTP
+    if (isSmartWallet) {
+      console.log('[Dashboard] 🤖 Smart Wallet detected - using extended timeout for XMTP');
+    }
     
     if (currentWalletAddress && !isXmtpConnected && !isXmtpConnecting && xmtpRetryCount < maxRetries) {
       console.log(`[Dashboard] Scheduling XMTP auto-connect for address: ${currentWalletAddress} (attempt ${xmtpRetryCount + 1}/${maxRetries})`);
@@ -218,7 +204,7 @@ const DashboardPage: React.FC = () => {
             console.error('❌ XMTP auto-connect failed after maximum retries. Manual connection required.');
           }
         }
-      }, 3000 + (xmtpRetryCount * 3000)); // Increasing delay: 3s, 6s
+      }, 5000); // Single 5 second delay
     } else if (xmtpRetryCount >= maxRetries) {
       console.log('[Dashboard] XMTP auto-connect disabled after maximum retries. Use manual connect button.');
     }
@@ -718,7 +704,6 @@ const DashboardPage: React.FC = () => {
       }
       
       // Clear local application state
-      setCurrentWalletAddress(null);
       setStaffData(null);
       setUsdcBalance('0');
       setXmtpMessages([]);
@@ -882,7 +867,13 @@ const DashboardPage: React.FC = () => {
             <div className="flex items-center gap-4">
               {/* XMTP Status and Connect Button */}
               <div className="flex items-center gap-2">
-                {isXmtpConnected ? (
+                {isSmartWallet && !isXmtpConnected && !isXmtpConnecting ? (
+                  <div className="flex items-center gap-2 bg-warning/10 px-3 py-2 rounded-lg" title="Smart Wallet detected - XMTP may take longer to connect">
+                    <div className="w-2 h-2 bg-warning rounded-full"></div>
+                    <span className="text-sm font-medium text-warning">Smart Wallet (Extended timeout)</span>
+                    <MessageCircle size={14} className="text-warning" />
+                  </div>
+                ) : isXmtpConnected ? (
                   <div className="flex items-center gap-2 bg-success/10 px-3 py-2 rounded-lg">
                     <div className="w-2 h-2 bg-success rounded-full"></div>
                     <span className="text-sm font-medium text-success">XMTP Connected</span>
@@ -1190,6 +1181,11 @@ const DashboardPage: React.FC = () => {
                     <h3 className="text-lg font-medium text-foreground mb-2">No messages yet</h3>
                     <p className="text-muted-foreground mb-6">
                       When someone sends you a tip, you'll see the notifications and messages here.
+                      {isSmartWallet && (
+                        <span className="block mt-2 text-sm text-warning">
+                          Note: Smart Wallets may require longer time to connect to XMTP messaging.
+                        </span>
+                      )}
                     </p>
                   </div>
                 ) : (
