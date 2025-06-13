@@ -9,6 +9,7 @@ import SafeOnchainProvider from '../components/SafeOnchainProvider';
 import SafeWalletComponents from '../components/SafeWalletComponents';
 import { base } from 'viem/chains';
 import type { LifecycleStatus } from '@coinbase/onchainkit/transaction';
+import { useDisconnect } from 'wagmi';
 
 // USDC contract address on Base mainnet
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -16,6 +17,7 @@ const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const TipPageContent: React.FC = () => {
   const { staffId } = useParams<{ staffId: string }>();
   const navigate = useNavigate();
+  const { disconnect } = useDisconnect();
   
   const [staff, setStaff] = useState<{ name: string; photoUrl: string } | null>(null);
   const [amount, setAmount] = useState(5);
@@ -46,6 +48,7 @@ const TipPageContent: React.FC = () => {
   let connect: any = null;
   let isConnected = false;
   let warmupConversation: any = null;
+  let xmtpDisconnect: any = null;
   
   try {
     const xmtp = useXmtp();
@@ -53,6 +56,7 @@ const TipPageContent: React.FC = () => {
     connect = xmtp.connect;
     isConnected = xmtp.isConnected;
     warmupConversation = xmtp.warmupConversation;
+    xmtpDisconnect = xmtp.disconnect;
   } catch (error) {
     console.warn('XMTP context not available:', error);
   }
@@ -185,68 +189,49 @@ const TipPageContent: React.FC = () => {
     try {
       console.log('[TipPage] Logging out...');
       
-      // Disconnect wallet properly
-      if (window.ethereum) {
+      // Disconnect XMTP first
+      if (xmtpDisconnect) {
         try {
-          // For MetaMask and other injected wallets
-          if (window.ethereum.disconnect) {
-            await window.ethereum.disconnect();
-          }
-          
-          // Clear wallet connection permissions
-          if (window.ethereum.request) {
-            try {
-              await window.ethereum.request({
-                method: 'wallet_revokePermissions',
-                params: [{ eth_accounts: {} }]
-              });
-            } catch (revokeError) {
-              console.warn('[TipPage] Could not revoke permissions:', revokeError);
-            }
-          }
-        } catch (walletError) {
-          console.warn('[TipPage] Wallet disconnect error:', walletError);
+          xmtpDisconnect();
+          console.log('[TipPage] ✅ XMTP disconnected');
+        } catch (xmtpError) {
+          console.warn('[TipPage] ⚠️ XMTP disconnect error:', xmtpError);
         }
-        
-        // Clear wallet-related storage
+      }
+      
+      // Disconnect wallet using wagmi
+      if (disconnect) {
+        disconnect();
+        console.log('[TipPage] ✅ Wallet disconnected via wagmi');
+      }
+      
+      // Clear local state
+      setIsWalletConnected(false);
+      setUsdcBalance('0');
+      setIsWarmedUp(false);
+      setWarmupStatus('');
+      
+      // Clear wallet-related storage as backup
+      try {
         localStorage.removeItem('walletconnect');
         localStorage.removeItem('WALLETCONNECT_DEEPLINK_CHOICE');
         localStorage.removeItem('wagmi.wallet');
         localStorage.removeItem('wagmi.connected');
         localStorage.removeItem('wagmi.cache');
         localStorage.removeItem('coinbaseWallet.addresses');
-        
-        // Clear IndexedDB wallet data
-        try {
-          const databases = await indexedDB.databases();
-          databases.forEach(db => {
-            if (db.name && (
-              db.name.includes('wallet') || 
-              db.name.includes('web3') || 
-              db.name.includes('coinbase') ||
-              db.name.includes('metamask') ||
-              db.name.includes('walletconnect')
-            )) {
-              indexedDB.deleteDatabase(db.name);
-              console.log(`[TipPage] Cleared ${db.name} database`);
-            }
-          });
-        } catch (error) {
-          console.warn('[TipPage] Could not clear IndexedDB:', error);
-        }
+        console.log('[TipPage] ✅ Cleared wallet storage');
+      } catch (storageError) {
+        console.warn('[TipPage] ⚠️ Storage clear error:', storageError);
       }
       
-      // Update local state only
-      setIsWalletConnected(false);
-      setUsdcBalance('0');
-      
-      console.log('[TipPage] Logout completed successfully');
+      console.log('[TipPage] ✅ Logout completed successfully');
       
     } catch (error) {
-      console.error('[TipPage] Error during logout:', error);
+      console.error('[TipPage] ❌ Error during logout:', error);
       // Still update state even if something fails
       setIsWalletConnected(false);
       setUsdcBalance('0');
+      setIsWarmedUp(false);
     }
   };
 
@@ -896,13 +881,11 @@ const TipPageContent: React.FC = () => {
               }
             >
               {({ ConnectWallet }) => (
-                <div className="w-full">
-                  <ConnectWallet>
-                    <button className="w-full py-3 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-colors">
-                      Connect Wallet
-                    </button>
-                  </ConnectWallet>
-                </div>
+                <ConnectWallet>
+                  <button className="w-full py-3 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-colors">
+                    Connect Wallet
+                  </button>
+                </ConnectWallet>
               )}
             </SafeWalletComponents>
           ) : (
