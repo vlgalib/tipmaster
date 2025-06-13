@@ -166,20 +166,25 @@ cd frontend && npm install
 cd ../functions && npm install
 ```
 
-2. **Environment Setup**
+2. **Firebase Configuration**
 ```bash
-cp env.example frontend/.env.local
+# Copy Firebase config template
+cp frontend/src/firebaseConfig.example.ts frontend/src/firebaseConfig.ts
 ```
 
-Configure with your Firebase settings:
-```env
-VITE_FIREBASE_API_KEY=your_firebase_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-VITE_FIREBASE_APP_ID=your_app_id
+Edit `frontend/src/firebaseConfig.ts` with your Firebase project settings:
+```typescript
+export const firebaseConfig = {
+  apiKey: "your_firebase_api_key_here",
+  authDomain: "your_project.firebaseapp.com", 
+  projectId: "your_project_id",
+  storageBucket: "your_project.firebasestorage.app",
+  messagingSenderId: "your_messaging_sender_id",
+  appId: "your_app_id"
+};
 ```
+
+**⚠️ Security Note**: `firebaseConfig.ts` is in `.gitignore` to protect your API keys.
 
 3. **Development with OnchainKit**
 ```bash

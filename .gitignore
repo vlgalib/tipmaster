@@ -115,6 +115,7 @@ temp/
 **/serviceAccountKey.json
 **/firebase-adminsdk-*.json
 **/*-firebase-adminsdk-*.json
+frontend/src/firebaseConfig.ts
 
 # Test files
 test-*.js

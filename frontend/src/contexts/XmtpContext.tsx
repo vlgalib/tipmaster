@@ -82,14 +82,22 @@ const xmtpWorkerApi = {
       const signer = walletClientToSigner(this.walletClient);
       const signature = await signer.signMessage(payload.message);
       
-      console.log('[Worker API] Signature received:', { signatureLength: signature.length });
+      console.log('[Worker API] Signature received:', { 
+        signatureLength: signature.length,
+        signatureType: signature.constructor.name,
+        isUint8Array: signature instanceof Uint8Array
+      });
       
-      // Send Uint8Array signature directly to Worker
+      // Convert Uint8Array to regular array for postMessage serialization
+      const signatureArray = Array.from(signature);
+      console.log('[Worker API] Sending signature as array:', { arrayLength: signatureArray.length });
+      
+      // Send signature as regular array to Worker
       this.worker.postMessage({
         id,
         type: 'signResponse',
         success: true,
-        payload: { signature }
+        payload: { signature: signatureArray }
       });
     } catch (error: any) {
       console.error('[Worker API] Sign request failed:', error);

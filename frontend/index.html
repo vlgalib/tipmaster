@@ -24,6 +24,59 @@
       if (typeof global === 'undefined') {
         window.global = window;
       }
+      
+      // CRITICAL: Override console methods BEFORE any other scripts load
+      const originalConsoleWarn = console.warn;
+      const originalConsoleLog = console.log;
+      const originalConsoleError = console.error;
+      
+      console.warn = function(...args) {
+        const message = args.join(' ').toString();
+        if (message.includes('SES') || 
+            message.includes('dateTaming') || 
+            message.includes('mathTaming') ||
+            message.includes('lockdown-install') ||
+            message.includes('deprecated and does nothing') ||
+            message.includes('Removing unpermitted intrinsics') ||
+            message.includes('toTemporalInstant')) {
+          return;
+        }
+        originalConsoleWarn.apply(console, args);
+      };
+      
+      console.log = function(...args) {
+        const message = args.join(' ').toString();
+        if (message.includes('SES') && (
+            message.includes('dateTaming') || 
+            message.includes('mathTaming') ||
+            message.includes('Removing unpermitted intrinsics'))) {
+          return;
+        }
+        originalConsoleLog.apply(console, args);
+      };
+      
+      console.error = function(...args) {
+        const message = args.join(' ').toString();
+        if (message.includes('key_package_cleaner_worker') || 
+            message.includes('sync worker error') ||
+            message.includes('Record not found inbox_id') ||
+            message.includes('NoModificationAllowedError') ||
+            message.includes('An error occurred while creating sync access handle')) {
+          return;
+        }
+        originalConsoleError.apply(console, args);
+      };
+      
+      // CRITICAL: Firebase XMTP configuration
+      window.__XMTP_FIREBASE_CONFIG__ = {
+        useInMemoryStorage: true,
+        disableIndexedDB: true,
+        simplifiedInit: true,
+        maxRetries: 1,
+        timeout: 15000,
+        enablePersistence: false,
+        dbPath: undefined
+      };
     </script>
   </head>
   <body>

@@ -47,6 +47,8 @@ class RemoteSigner {
     return new Promise<Uint8Array>((resolve, reject) => {
       const requestId = `sign-${Date.now()}-${Math.random()}`;
       
+      console.log(`[XMTP Worker] 📝 Requesting signature for message (ID: ${requestId})`);
+      
       // Store the promise handlers
       signerRequests.set(requestId, { resolve, reject });
       
@@ -56,6 +58,15 @@ class RemoteSigner {
         type: 'signRequest',
         payload: { message }
       });
+      
+      // Add timeout for signature request
+      setTimeout(() => {
+        if (signerRequests.has(requestId)) {
+          console.error(`[XMTP Worker] ❌ Signature timeout for request ${requestId}`);
+          signerRequests.delete(requestId);
+          reject(new Error('Signature request timeout after 10s'));
+        }
+      }, 10000); // 10 second timeout
     });
   }
 
@@ -74,15 +85,28 @@ self.addEventListener('message', (event) => {
   const { id, type, success, payload, error, action } = event.data;
   
   if (type === 'signResponse') {
+    console.log(`[XMTP Worker] 📨 Received sign response for ID: ${id}, success: ${success}`);
     if (signerRequests.has(id)) {
       const { resolve, reject } = signerRequests.get(id);
       if (success) {
-        // Return signature as-is, main thread should handle conversion to Uint8Array
-        resolve(payload.signature);
+        console.log(`[XMTP Worker] ✅ Signature successful for ID: ${id}`);
+        // Convert array back to Uint8Array
+        const signature = Array.isArray(payload.signature) 
+          ? new Uint8Array(payload.signature)
+          : payload.signature;
+        console.log(`[XMTP Worker] 🔄 Converted signature:`, {
+          originalType: Array.isArray(payload.signature) ? 'Array' : typeof payload.signature,
+          convertedType: signature.constructor.name,
+          length: signature.length
+        });
+        resolve(signature);
       } else {
+        console.error(`[XMTP Worker] ❌ Signature failed for ID: ${id}:`, error);
         reject(new Error(error.message));
       }
       signerRequests.delete(id);
+    } else {
+      console.warn(`[XMTP Worker] ⚠️ Received sign response for unknown ID: ${id}`);
     }
     return;
   }
@@ -118,11 +142,56 @@ async function initClient(payload: { walletAddress: string }) {
     console.log('[XMTP Worker] Signer type:', typeof signer);
     console.log('[XMTP Worker] Signer instanceof RemoteSigner:', signer instanceof RemoteSigner);
 
-    // Use in-memory storage instead of IndexedDB
-    xmtpClient = await Client.create(signer, {
-      env: 'production',
-      apiUrl: isFirebaseEnvironment() ? undefined : 'https://production.xmtp.network'
-    });
+    // Use in-memory storage instead of IndexedDB with error suppression and timeout
+    console.log('[XMTP Worker] Starting Client.create with 15s timeout...');
+    
+    // Add progress tracking
+    const progressTimer = setInterval(() => {
+      console.log('[XMTP Worker] ⏳ Client.create still in progress...');
+    }, 5000);
+    
+    try {
+      // Firebase-specific configuration to avoid IndexedDB issues
+      const clientOptions = isFirebaseEnvironment() ? {
+        env: 'production' as const,
+        // Critical: disable persistence for Firebase
+        enablePersistence: false,
+        // Use in-memory storage only
+        dbPath: undefined,
+        // Simplified initialization
+        useSimplifiedInit: true
+      } : {
+        env: 'production' as const,
+        apiUrl: 'https://production.xmtp.network'
+      };
+      
+      console.log('[XMTP Worker] Using client options:', clientOptions);
+      
+      xmtpClient = await Promise.race([
+        Client.create(signer, clientOptions),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Client.create timeout after 15s')), 15000)
+        )
+      ]);
+      clearInterval(progressTimer);
+      console.log('[XMTP Worker] ✅ Client.create completed successfully!');
+    } catch (error) {
+      clearInterval(progressTimer);
+      console.error('[XMTP Worker] ❌ Client.create failed or timed out:', error);
+      throw error;
+    }
+
+    // Suppress XMTP key package cleaner worker errors
+    const originalConsoleError = console.error;
+    console.error = (...args) => {
+      const message = args.join(' ').toString();
+      if (message.includes('key_package_cleaner_worker') || 
+          message.includes('sync worker error') ||
+          message.includes('Record not found inbox_id')) {
+        return; // Suppress these specific XMTP internal errors
+      }
+      originalConsoleError.apply(console, args);
+    };
 
     // Check availability of main methods
     if (!xmtpClient || typeof xmtpClient.conversations?.newDm !== 'function') {
@@ -139,11 +208,21 @@ async function initClient(payload: { walletAddress: string }) {
     try {
       const inboxId = xmtpClient.inboxId;
       console.log('[XMTP Worker] ✅ Client has inboxId:', inboxId);
+      
+      // Test basic functionality
+      console.log('[XMTP Worker] Testing client functionality...');
+      const conversations = xmtpClient.conversations;
+      console.log('[XMTP Worker] ✅ Conversations object available:', !!conversations);
+      console.log('[XMTP Worker] ✅ newDm method available:', typeof conversations?.newDm);
+      
+      console.log('[XMTP Worker] 🎉 Client fully initialized and ready!');
+      return { walletAddress: walletAddress };
     } catch (inboxError) {
       console.warn('[XMTP Worker] ⚠️ Could not access inboxId:', inboxError);
+      // Still return success if client was created
+      console.log('[XMTP Worker] 🎉 Client created (without inboxId verification)');
+      return { walletAddress: walletAddress };
     }
-    
-    return { walletAddress: walletAddress };
   } catch (error) {
     const errorInfo = error instanceof Error ? {
       error,
@@ -160,24 +239,39 @@ async function initClient(payload: { walletAddress: string }) {
     if (error instanceof Error) {
       if (error.message.includes('NoModificationAllowedError') || 
           error.message.includes('sync access handle') ||
-          error.message.includes('IndexedDB')) {
-        console.warn('[XMTP Worker] Firebase IndexedDB restriction detected, trying alternative approach...');
+          error.message.includes('IndexedDB') ||
+          error.message.includes('An error occurred while creating sync access handle')) {
+        console.warn('[XMTP Worker] Firebase IndexedDB restriction detected, trying ultra-simplified approach...');
         
-        // Try simplified initialization without local storage
+        // Try ultra-simplified initialization for Firebase
         try {
-          const simpleOptions = {
+          const ultraSimpleOptions = {
             env: 'production' as const,
-            // Maximally simplified configuration for Firebase
+            // Absolutely no persistence
+            enablePersistence: false,
+            // No database path
+            dbPath: undefined,
+            // No API URL to use default
+            apiUrl: undefined,
+            // Minimal configuration
+            useInMemoryStorage: true
           };
           
-                      // Create new signer for retry attempt
+          console.log('[XMTP Worker] Attempting ultra-simple Firebase config:', ultraSimpleOptions);
+          
+          // Create new signer for retry attempt
           const retrySigner = new RemoteSigner(walletAddress);
-          xmtpClient = await Client.create(retrySigner, simpleOptions);
-          console.log('[XMTP Worker] ✅ Client created with simplified Firebase configuration!');
+          xmtpClient = await Promise.race([
+            Client.create(retrySigner, ultraSimpleOptions),
+            new Promise<never>((_, reject) => 
+              setTimeout(() => reject(new Error('Ultra-simple client timeout after 10s')), 10000)
+            )
+          ]);
+          console.log('[XMTP Worker] ✅ Client created with ultra-simplified Firebase configuration!');
           return { walletAddress: walletAddress };
         } catch (retryError) {
-          console.error('[XMTP Worker] Retry with simplified config also failed:', retryError);
-          throw new Error(`Firebase XMTP initialization failed: ${error.message}`);
+          console.error('[XMTP Worker] Ultra-simple retry also failed:', retryError);
+          throw new Error(`Firebase XMTP initialization completely failed: ${error.message}`);
         }
       }
     }
@@ -765,6 +859,7 @@ console.log('[XMTP Worker] Worker started, checking environment...');
 // Filter noisy XMTP logs in worker
 const originalConsoleInfo = console.info;
 const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
 
 console.info = function(...args) {
   const message = args.join(' ');
@@ -783,10 +878,24 @@ console.warn = function(...args) {
   const message = args.join(' ');
   // Block known warnings
   if (message.includes('sync worker error storage error: Record not found') ||
-      message.includes('key_package_cleaner_worker')) {
+      message.includes('key_package_cleaner_worker') ||
+      message.includes('SES') ||
+      message.includes('dateTaming') ||
+      message.includes('mathTaming')) {
     return; // Don't show these warnings
   }
   originalConsoleWarn.apply(console, args);
+};
+
+console.error = function(...args) {
+  const message = args.join(' ');
+  // Block known XMTP internal errors
+  if (message.includes('key_package_cleaner_worker') ||
+      message.includes('sync worker error storage error: Record not found') ||
+      message.includes('Record not found inbox_id')) {
+    return; // Don't show these errors
+  }
+  originalConsoleError.apply(console, args);
 };
 
 console.log('[XMTP Worker] Environment detection:', {

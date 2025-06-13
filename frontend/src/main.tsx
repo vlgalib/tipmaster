@@ -40,7 +40,7 @@ try {
 // Override SES to prevent XMTP blocking
 const originalConsoleWarn = console.warn;
 console.warn = (...args) => {
-  const message = args[0]?.toString?.() || '';
+  const message = args.join(' ').toString();
   // Suppress SES deprecated warnings and lockdown warnings
   if (message.includes('SES') || 
       message.includes('dateTaming') || 
@@ -48,10 +48,37 @@ console.warn = (...args) => {
       message.includes('lockdown-install') ||
       message.includes('deprecated and does nothing') ||
       message.includes('Removing unpermitted intrinsics') ||
-      message.includes('toTemporalInstant')) {
+      message.includes('toTemporalInstant') ||
+      message.includes('The \'dateTaming\' option is deprecated') ||
+      message.includes('The \'mathTaming\' option is deprecated')) {
     return;
   }
   originalConsoleWarn.apply(console, args);
+};
+
+// Also override console.log to filter SES messages
+const originalConsoleLog = console.log;
+console.log = (...args) => {
+  const message = args.join(' ').toString();
+  if (message.includes('SES') && (
+      message.includes('dateTaming') || 
+      message.includes('mathTaming') ||
+      message.includes('Removing unpermitted intrinsics'))) {
+    return;
+  }
+  originalConsoleLog.apply(console, args);
+};
+
+// Override console.error to filter XMTP internal errors
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  const message = args.join(' ').toString();
+  if (message.includes('key_package_cleaner_worker') || 
+      message.includes('sync worker error storage error: Record not found') ||
+      message.includes('Record not found inbox_id')) {
+    return;
+  }
+  originalConsoleError.apply(console, args);
 };
 
 // Override error handler to prevent SES errors from breaking XMTP
