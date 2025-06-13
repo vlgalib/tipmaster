@@ -898,9 +898,9 @@ const TipPageContent: React.FC = () => {
               {({ ConnectWallet }) => (
                 <div className="w-full">
                   <ConnectWallet>
-                    <span className="w-full py-3 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-colors block text-center">
+                    <button className="w-full py-3 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-colors">
                       Connect Wallet
-                    </span>
+                    </button>
                   </ConnectWallet>
                 </div>
               )}
