@@ -56,6 +56,15 @@ const DashboardPage: React.FC = () => {
     const checkWalletConnection = async () => {
       if (window.ethereum) {
         try {
+          // Log wallet type for debugging
+          if (window.ethereum.isCoinbaseWallet) {
+            console.log('[Dashboard] 🟦 Coinbase Wallet detected');
+          } else if (window.ethereum.isMetaMask) {
+            console.log('[Dashboard] 🦊 MetaMask detected');
+          } else {
+            console.log('[Dashboard] 🔗 Generic wallet detected');
+          }
+
           const accounts = await window.ethereum.request({ method: 'eth_accounts' });
           if (accounts.length > 0) {
             setCurrentWalletAddress(accounts[0].toLowerCase());
@@ -66,10 +75,11 @@ const DashboardPage: React.FC = () => {
             navigate('/');
           }
         } catch (error) {
-          console.error('Error checking wallet:', error);
+          console.error('[Dashboard] Error checking wallet:', error);
           navigate('/');
         }
       } else {
+        console.warn('[Dashboard] ⚠️ No window.ethereum found');
         navigate('/');
       }
     };
@@ -101,11 +111,25 @@ const DashboardPage: React.FC = () => {
   // Get USDC balance
   const getUsdcBalance = async (address: string) => {
     try {
+      console.log('[Dashboard] 💰 Fetching USDC balance for:', address);
+      
+      // Check if we're on Base network
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const currentChainId = parseInt(chainId, 16);
+      
+      if (currentChainId !== 8453) {
+        console.warn('[Dashboard] ⚠️ Not on Base network (chainId:', currentChainId, '), setting balance to 0');
+        setUsdcBalance('0');
+        return;
+      }
+      
       // USDC contract address on Base mainnet
       const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
       
       // ERC-20 balanceOf call
       const balanceOfData = '0x70a08231' + address.slice(2).padStart(64, '0');
+      
+      console.log('[Dashboard] 📞 Making eth_call with data:', balanceOfData);
       
       const result = await window.ethereum.request({
         method: 'eth_call',
@@ -115,12 +139,29 @@ const DashboardPage: React.FC = () => {
         }, 'latest']
       });
       
+      console.log('[Dashboard] 📋 Raw result from eth_call:', result);
+      
+      // Validate result
+      if (!result || typeof result !== 'string' || !result.startsWith('0x')) {
+        console.error('[Dashboard] ❌ Invalid result format:', result);
+        setUsdcBalance('0');
+        return;
+      }
+      
       // Convert hex to decimal and adjust for 6 decimals (USDC)
       const balanceWei = parseInt(result, 16);
+      
+      if (isNaN(balanceWei)) {
+        console.error('[Dashboard] ❌ Failed to parse balance as number:', result);
+        setUsdcBalance('0');
+        return;
+      }
+      
       const balance = (balanceWei / 1000000).toFixed(2); // USDC has 6 decimals
+      console.log('[Dashboard] ✅ USDC balance calculated:', balance);
       setUsdcBalance(balance);
     } catch (error) {
-      console.error('Error fetching USDC balance:', error);
+      console.error('[Dashboard] ❌ Error fetching USDC balance:', error);
       setUsdcBalance('0');
     }
   };

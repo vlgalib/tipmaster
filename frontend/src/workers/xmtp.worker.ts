@@ -374,7 +374,9 @@ async function sendMessage(payload: { recipientAddress: string; message: string 
                 content: message,
                 timestamp: Date.now(),
                 conversationId: `${(globalThis as any).workerWalletAddress}-${recipientAddress}`,
-                messageId: sentMessage.id || `msg_${Date.now()}`
+                messageId: sentMessage.id || `msg_${Date.now()}`,
+                sentAtNs: sentMessage.sentAtNs || Date.now().toString() + '000000', // Convert to nanoseconds
+                senderInboxId: sentMessage.senderInboxId || (globalThis as any).workerWalletAddress
               }
             });
           }

@@ -76,35 +76,25 @@ const TipPageContent: React.FC = () => {
   // Auto-warmup XMTP when wallet connects
   useEffect(() => {
     const warmupXmtp = async () => {
-      if (isWalletConnected && staffId && warmupConversation && !isConnected) {
+      if (isWalletConnected && isConnected && staffId && !isWarmedUp) {
         try {
           console.log('[TipPage] 🔥 Starting automatic XMTP warmup...');
           // Add a small delay to ensure wallet is fully connected
           await new Promise(resolve => setTimeout(resolve, 2000));
-          await warmupConversation(staffId);
-          console.log('[TipPage] ✅ XMTP warmup completed');
+          const result = await warmupConversation(staffId);
+          console.log('[TipPage] ✅ XMTP warmup completed:', result);
           setIsWarmedUp(true);
         } catch (error) {
           console.warn('[TipPage] ❌ XMTP warmup failed:', error);
-          // Retry once after a delay
-          setTimeout(async () => {
-            try {
-              console.log('[TipPage] 🔄 Retrying XMTP warmup...');
-              await warmupConversation(staffId);
-              console.log('[TipPage] ✅ XMTP warmup retry successful');
-              setIsWarmedUp(true);
-            } catch (retryError) {
-              console.warn('[TipPage] ❌ XMTP warmup retry failed:', retryError);
-            }
-          }, 5000);
+          // Don't retry automatically - let user manually retry if needed
         }
       }
     };
 
     warmupXmtp();
-  }, [isWalletConnected, staffId, warmupConversation, isConnected]);
+  }, [isWalletConnected, staffId, warmupConversation, isConnected, isWarmedUp]);
 
-  // Monitor XMTP connection status and auto-enable when connected
+  // Monitor XMTP connection status
   useEffect(() => {
     console.log('[TipPage] 🔍 XMTP Status Check:', {
       isConnected,
@@ -113,15 +103,29 @@ const TipPageContent: React.FC = () => {
       isWalletConnected
     });
     
-    // Remove automatic warmup state setting - user must manually warm up
+    // Reset warmup status if XMTP disconnects
+    if (!isConnected && isWarmedUp) {
+      console.log('[TipPage] 🔄 XMTP disconnected, resetting warmup status');
+      setIsWarmedUp(false);
+    }
   }, [isConnected, isWarmedUp, warmupConversation, isWalletConnected]);
 
   // Check wallet connection and get USDC balance
   const checkWalletAndBalance = async () => {
     try {
       if (!window.ethereum) {
+        console.warn('[TipPage] ⚠️ No window.ethereum found');
         setIsWalletConnected(false);
         return;
+      }
+
+      // Log wallet type for debugging
+      if (window.ethereum.isCoinbaseWallet) {
+        console.log('[TipPage] 🟦 Coinbase Wallet detected');
+      } else if (window.ethereum.isMetaMask) {
+        console.log('[TipPage] 🦊 MetaMask detected');
+      } else {
+        console.log('[TipPage] 🔗 Generic wallet detected');
       }
 
       const accounts = await window.ethereum.request({ method: 'eth_accounts' });
@@ -129,8 +133,12 @@ const TipPageContent: React.FC = () => {
         setIsWalletConnected(true);
         const userAddress = accounts[0];
         
+        console.log('[TipPage] 💰 Fetching USDC balance for:', userAddress);
+        
         // ERC-20 balanceOf call
         const balanceOfData = '0x70a08231' + userAddress.slice(2).padStart(64, '0');
+        
+        console.log('[TipPage] 📞 Making eth_call with data:', balanceOfData);
         
         const result = await window.ethereum.request({
           method: 'eth_call',
@@ -140,16 +148,33 @@ const TipPageContent: React.FC = () => {
           }, 'latest']
         });
         
+        console.log('[TipPage] 📋 Raw result from eth_call:', result);
+        
+        // Validate result
+        if (!result || typeof result !== 'string' || !result.startsWith('0x')) {
+          console.error('[TipPage] ❌ Invalid result format:', result);
+          setUsdcBalance('0');
+          return;
+        }
+        
         // Convert hex to decimal and adjust for 6 decimals (USDC)
         const balanceWei = parseInt(result, 16);
+        
+        if (isNaN(balanceWei)) {
+          console.error('[TipPage] ❌ Failed to parse balance as number:', result);
+          setUsdcBalance('0');
+          return;
+        }
+        
         const balance = (balanceWei / 1000000).toFixed(2); // USDC has 6 decimals
+        console.log('[TipPage] ✅ USDC balance calculated:', balance);
         setUsdcBalance(balance);
       } else {
         setIsWalletConnected(false);
         setUsdcBalance('0');
       }
     } catch (error) {
-      console.error('Error checking wallet/balance:', error);
+      console.error('[TipPage] ❌ Error checking wallet/balance:', error);
       setIsWalletConnected(false);
       setUsdcBalance('0');
     }
@@ -448,6 +473,15 @@ const TipPageContent: React.FC = () => {
       return;
     }
 
+    if (!isConnected) {
+      setAlertInfo({
+        show: true,
+        title: 'XMTP Not Connected',
+        message: 'XMTP client is not connected. Please wait for connection or refresh the page.'
+      });
+      return;
+    }
+
     if (!warmupConversation) {
       setAlertInfo({
         show: true,
@@ -475,17 +509,21 @@ const TipPageContent: React.FC = () => {
       
       const result = await warmupConversation(recipient);
       
+      console.log('[TipPage] ✅ Manual warmup completed:', result);
+      
       if (result?.success) {
         setWarmupStatus('✅ XMTP warmed up successfully! Next messages will be faster.');
         setIsWarmedUp(true);
-        setTimeout(() => setWarmupStatus(''), 5000);
+        
+        if (result.warning) {
+          console.warn('[TipPage] ⚠️ Warmup warning:', result.warning);
+        }
       } else {
-        setWarmupStatus('⚠️ Warmup completed with warnings');
-        setIsWarmedUp(true);
-        setTimeout(() => setWarmupStatus(''), 5000);
+        setWarmupStatus('⚠️ Warmup completed with issues');
+        setIsWarmedUp(true); // Still mark as warmed up since conversation was created
       }
       
-      console.log('[TipPage] ✅ Manual warmup completed:', result);
+      setTimeout(() => setWarmupStatus(''), 5000);
       
     } catch (error) {
       console.error('[TipPage] ❌ Manual warmup failed:', error);

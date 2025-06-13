@@ -48,7 +48,7 @@ const AuthPage: React.FC = () => {
       // Check multiple wallet providers
       let address = null;
       
-      // Check window.ethereum (MetaMask, injected wallets)
+      // Check window.ethereum (MetaMask, Coinbase Wallet, other injected wallets)
       if (window.ethereum) {
         try {
           const accounts = await window.ethereum.request({ method: 'eth_accounts' });
@@ -61,7 +61,7 @@ const AuthPage: React.FC = () => {
         }
       }
       
-      // Check for Coinbase Wallet SDK
+      // Check for Coinbase Wallet SDK (legacy support)
       if (!address && window.coinbaseWalletExtension) {
         try {
           const accounts = await window.coinbaseWalletExtension.request({ method: 'eth_accounts' }) as string[];
@@ -71,19 +71,6 @@ const AuthPage: React.FC = () => {
           }
         } catch (error) {
           console.warn('[Auth] Error checking Coinbase extension:', error);
-        }
-      }
-      
-      // Check for any other wallet providers
-      if (!address && window.web3) {
-        try {
-          const accounts = await window.web3.eth.getAccounts();
-          if (accounts && accounts.length > 0) {
-            address = accounts[0].toLowerCase();
-            console.log('[Auth] Found wallet via web3:', address);
-          }
-        } catch (error) {
-          console.warn('[Auth] Error checking web3:', error);
         }
       }
       
